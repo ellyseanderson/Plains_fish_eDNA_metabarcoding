@@ -1,0 +1,692 @@
+---
+title: "2023_data&midori_database"
+output: html_document
+date: "2024-02-16"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(readxl)
+library(tidyverse)
+library(gt)
+
+#check wd
+getwd()
+list.files()
+
+```
+
+
+```{r}
+###MiFish ALT, the newest verion of the pipeline 4/30/2024###
+
+#OTU_MiFish <- read.table(file = "blast_OTU_summary_MiFish_ALT.txt", fill = TRUE, header = TRUE)
+OTU_MiFish <- read_excel("C:/Users/Ellyse.Anderson/OneDrive - USDA/Documents/CPW_Fish_2024/blast_OTU_summary_MiFish_ATL.xlsx")
+Names <- read_excel("C:/Users/Ellyse.Anderson/OneDrive - USDA/Documents/CPW_Fish_2024/Latin_Common_Names_R.xlsx")
+
+OTU_MiFish$read_length <- nchar((OTU_MiFish$Sequence))
+#hist(OTU_MiFish$read_length) #two less than 70, all others keep
+
+#---------------------------------------------
+
+OTU_MiFish_cont <- OTU_MiFish %>%
+  mutate(read_length = nchar((Sequence))) %>%
+  filter(read_length > 70) %>%
+  filter(grepl('Actinopteri', Class)) %>% #remove this line if you want to see all the species identified
+  dplyr::group_by(Sample, Species) %>%
+  dplyr::summarize(Depth_sum = sum(Depth),
+            .groups = "drop") %>%
+  pivot_wider(names_from = Sample,
+              values_from = Depth_sum) %>%
+  replace(is.na(.), 0) %>%
+  #dplyr :: mutate(sum = rowSums(across(where(is.numeric)))) %>%
+  mutate(Species = str_replace(Species, "_[^_]+$", "")) %>%
+  inner_join(Names, by = "Species") %>%
+  mutate(Species = str_replace(Species, "_", " ")) %>% dplyr :: mutate(across(c(2:18), ~ if_else(. <= 10, 0, .))) #remove all hits less than 10 sequences
+ 
+#----------------------------------------------
+
+#removing species from the dataset 
+OTU_MiFish_cont_cleaned <- OTU_MiFish_cont %>%
+  filter(!(Species %in% c("Alburnus alburnus", "Algansea lacustris", "Ameiurus nebulosus", "Catostomus clarkii", "Catostomus macrocheilus", "Cottus gobio", "Cyprinella formosa", "Cyprinus multitaeniata", "Cyprinus pellegrini", "Erimonax monachus", "Gadus chalcogrammus", "Hybopsis winchelli", "Leuciscus idus", "Luxilus cardinalis", "Luxilus chrysocephalus", "Lythrurus matutinus", "Notropis chrosomus", "Notropis lutipinnis", "Notropis percobromus", "Notropis rubellus", "Notropis simus", "Notropis telescopus", "Notropis topeka", "Oncorhynchus kawamurae", "Oncorhynchus keta", "Oncorhynchus tshawytscha", "Parahucho perryi", "Pimephales notatus", "Pteronotropis euryzonus", "Rhinichthys evermanni", "Rhinichthys osculus", "Salmo obtusirostris", "Salmo pallaryi", "Salvelinus curilus", "Salvelinus fontinalis_x_Salvelinus_malma", "Salvelinus leucomaenis", "Salvelinus levanidovi", "Salvelinus malma", "Siphateles bicolor", "Tiaroga cobitis", "Xyrauchen texanus", "Hybopsis amnis", "Notropis heterolepis", "Rhinichthys atratulus"))) %>% mutate(across('Species', str_replace, 'Hybopsis dorsalis', 'Notropis dorsalis')) %>% #replace incorrect bms latin name with correct one
+dplyr :: mutate(across('Species', str_replace, 'Fundulus zebrinus', 'Fundulus kansae')) %>% #rename plains killifish latin name correctly
+   dplyr :: mutate(across('commonName', str_replace, 'Plains Killifish', 'Norther Plains Killifish')) #rename plains killifish common name correctly
+
+
+```
+
+```{r}
+###MiFish###
+
+##AROX##
+df_AROX4 <- data.frame(map(set_names(c("Species", "commonName", "AROX")),~select(OTU_MiFish_cont_cleaned,starts_with(.x))))
+df_AROX4$sequence_reads_SR <- df_AROX4 %>% select(3:5) %>% rowSums(na.rm=TRUE)
+df_AROX4$sequence_reads_C <- 0
+df_AROX4 <- df_AROX4[!(df_AROX4$sequence_reads_SR== 0),] #remove rows with only 0
+
+##LTC##
+df_LTC4 <- data.frame(map(set_names(c("Species", "commonName", "LTC")),~select(OTU_MiFish_cont_cleaned,starts_with(.x))))
+df_LTC4$sequence_reads_SR <- df_LTC4 %>% select(3:5) %>% rowSums(na.rm=TRUE)
+df_LTC4$sequence_reads_C <- 0
+df_LTC4 <- df_LTC4[!(df_LTC4$sequence_reads_SR== 0),] #remove rows with only 0
+
+##MC##
+df_MC4 <- data.frame(map(set_names(c("Species", "commonName", "MC")),~select(OTU_MiFish_cont_cleaned,starts_with(.x))))
+df_MC4$sequence_reads_SR <- df_MC4 %>% select(4:6) %>% rowSums(na.rm=TRUE)
+df_MC4$sequence_reads_C <- df_MC4 %>% select(3) %>% rowSums(na.rm=TRUE)
+df_MC4 <- df_MC4[!(df_MC4$sequence_reads_SR== 0 & df_MC4$sequence_reads_C== 0),] #remove rows with only 0
+
+##SPG##
+df_SPG4 <- data.frame(map(set_names(c("Species", "commonName", "SPG")),~select(OTU_MiFish_cont_cleaned,starts_with(.x))))
+df_SPG4$sequence_reads_SR <- df_SPG4 %>% select(3:5) %>% rowSums(na.rm=TRUE)
+df_SPG4$sequence_reads_C <- 0
+df_SPG4 <- df_SPG4[!(df_SPG4$sequence_reads_SR== 0),] #remove rows with only 0
+
+##UFC##
+df_UFC4 <- data.frame(map(set_names(c("Species", "commonName", "UFC")),~select(OTU_MiFish_cont_cleaned,starts_with(.x))))
+df_UFC4$sequence_reads_SR <- df_UFC4 %>% select(4:6) %>% rowSums(na.rm=TRUE)
+df_UFC4$sequence_reads_C <- df_UFC4 %>% select(3) %>% rowSums(na.rm=TRUE)
+df_UFC4 <- df_UFC4[!(df_UFC4$sequence_reads_SR== 0 & df_UFC4$sequence_reads_C== 0),] #remove rows with only 0
+
+```
+
+
+```{r}
+##16s##
+
+#OTU_16s <- read.table(file = "blast_OTU_summary_16s_ALT.txt", fill = TRUE, header = TRUE)
+OTU_16s <- read_excel("C:/Users/Ellyse.Anderson/OneDrive - USDA/Documents/CPW_Fish_2024/blast_OTU_summary_16s_ALT.xlsx")
+
+OTU_16s$read_length <- nchar((OTU_16s$Sequence))
+#hist(OTU_16s$read_length) #no super clear break, lots of fish >52
+ 
+#----------------------------------------------
+
+OTU_16s_cont <- OTU_16s %>%
+  mutate(read_length = nchar((Sequence))) %>%
+  filter(read_length > 52) %>% 
+  filter(grepl('Actinopteri', Class)) %>%
+  dplyr::group_by(Sample, Species) %>%
+  dplyr::summarize(Depth_sum = sum(Depth),
+            .groups = "drop") %>%
+  pivot_wider(names_from = Sample,
+              values_from = Depth_sum) %>%
+  replace(is.na(.), 0) %>%
+  #dplyr :: mutate(sum = rowSums(across(where(is.numeric)))) %>%
+  mutate(Species = str_replace(Species, "_[^_]+$", "")) %>%
+  inner_join(Names, by = "Species") %>%
+  mutate(Species = str_replace(Species, "_", " ")) %>% dplyr :: mutate(across(c(2:22), ~ if_else(. <= 10, 0, .))) #remove all hits less than 10 sequences 
+
+#----------------------------------------------
+
+#removing species from the dataset 
+OTU_16s_cont_cleaned <- OTU_16s_cont %>%
+  filter(!(Species %in% c("Alburnus alburnus", "Algansea lacustris", "Ameiurus nebulosus", "Catostomus clarkii", "Catostomus macrocheilus", "Cottus gobio", "Cyprinella formosa", "Cyprinus multitaeniata", "Cyprinus pellegrini", "Erimonax monachus", "Gadus chalcogrammus", "Hybopsis winchelli", "Leuciscus idus", "Luxilus cardinalis", "Luxilus chrysocephalus", "Lythrurus matutinus", "Notropis chrosomus", "Notropis lutipinnis", "Notropis percobromus", "Notropis rubellus", "Notropis simus", "Notropis telescopus", "Notropis topeka", "Oncorhynchus kawamurae", "Oncorhynchus keta", "Oncorhynchus tshawytscha", "Parahucho perryi", "Pimephales notatus", "Pteronotropis euryzonus", "Rhinichthys evermanni", "Rhinichthys osculus", "Salmo obtusirostris", "Salmo pallaryi", "Salvelinus curilus", "Salvelinus fontinalis_x_Salvelinus", "Salvelinus leucomaenis", "Salvelinus levanidovi", "Salvelinus malma", "Siphateles bicolor", "Tiaroga cobitis", "Xyrauchen texanus", "Hybopsis amnis", "Notropis heterolepis", "Rhinichthys atratulus"))) %>% 
+   dplyr :: mutate(across('Species', str_replace, 'Hybopsis dorsalis', 'Notropis dorsalis')) %>% #replace incorrect bms latin name with correct one 
+   dplyr :: mutate(across('Species', str_replace, 'Fundulus zebrinus', 'Fundulus kansae')) %>% #rename plains killifish latin name correctly
+   dplyr :: mutate(across('commonName', str_replace, 'Plains Killifish', 'Norther Plains Killifish')) #rename plains killifish common name correctly
+
+```
+
+
+```{r}
+###16s###
+
+##AROX##
+df_AROX4_16s <- data.frame(map(set_names(c("Species", "commonName", "AROX")),~select(OTU_16s_cont_cleaned,starts_with(.x))))
+df_AROX4_16s$sequence_reads_SR <- df_AROX4_16s %>% select(5:7) %>% rowSums(na.rm=TRUE)
+df_AROX4_16s$sequence_reads_C <- df_AROX4_16s %>% select(3:4) %>% rowSums(na.rm=TRUE)
+df_AROX4_16s <- df_AROX4_16s[!(df_AROX4_16s$sequence_reads_C== 0 & df_AROX4_16s$sequence_reads_SR== 0),] #remove rows with only 0 
+
+##LTC##
+df_LTC4_16s <- data.frame(map(set_names(c("Species", "commonName", "LTC")),~select(OTU_16s_cont_cleaned,starts_with(.x))))
+df_LTC4_16s$sequence_reads_SR <- df_LTC4_16s %>% select(4:5) %>% rowSums(na.rm=TRUE)
+df_LTC4_16s$sequence_reads_C <- df_LTC4_16s %>% select(3) %>% rowSums(na.rm=TRUE)
+df_LTC4_16s <- df_LTC4_16s[!(df_LTC4_16s$sequence_reads_C== 0 & df_LTC4_16s$sequence_reads_SR== 0),] #remove rows with only 0 
+
+##MC##
+df_MC4_16s <- data.frame(map(set_names(c("Species", "commonName", "MC")),~select(OTU_16s_cont_cleaned,starts_with(.x))))
+df_MC4_16s$sequence_reads_SR <- df_MC4_16s %>% select(5:7) %>% rowSums(na.rm=TRUE)
+df_MC4_16s$sequence_reads_C <- df_MC4_16s %>% select(3:4) %>% rowSums(na.rm=TRUE)
+df_MC4_16s <- df_MC4_16s[!(df_MC4_16s$sequence_reads_C== 0 & df_MC4_16s$sequence_reads_SR== 0),] #remove rows with only 0 
+
+##SPG##
+df_SPG4_16s <- data.frame(map(set_names(c("Species", "commonName", "SPG")),~select(OTU_16s_cont_cleaned,starts_with(.x))))
+df_SPG4_16s$sequence_reads_SR <- df_SPG4_16s %>% select(4:6) %>% rowSums(na.rm=TRUE)
+df_SPG4_16s$sequence_reads_C <- df_SPG4_16s %>% select(3) %>% rowSums(na.rm=TRUE)
+df_SPG4_16s <- df_SPG4_16s[!(df_SPG4_16s$sequence_reads_C== 0 & df_SPG4_16s$sequence_reads_SR== 0),] #remove rows with only 0 
+
+##UFC##
+df_UFC4_16s <- data.frame(map(set_names(c("Species", "commonName", "UFC")),~select(OTU_16s_cont_cleaned,starts_with(.x))))
+df_UFC4_16s$sequence_reads_SR <- df_UFC4_16s %>% select(4:6) %>% rowSums(na.rm=TRUE)
+df_UFC4_16s$sequence_reads_C <- df_UFC4_16s %>% select(3) %>% rowSums(na.rm=TRUE)
+df_UFC4_16s <- df_UFC4_16s[!(df_UFC4_16s$sequence_reads_C== 0 & df_UFC4_16s$sequence_reads_SR== 0),] #remove rows with only 0 
+
+```
+
+```{r}
+#merge 16s and MiFish
+
+midori_16s <- OTU_16s_cont_cleaned %>%
+ mutate(AROX = rowSums(select(., contains("AROX-S")))) %>%
+ mutate(LTC = rowSums(select(., contains("LTC-S")))) %>%
+ mutate(MC = rowSums(select(., contains("MC-S")))) %>%
+ mutate(SPG = rowSums(select(., contains("SPG-S")))) %>%
+ mutate(UFC = rowSums(select(., contains("UFC-S")))) %>%
+ select(-c(2:23))
+
+midori_MiFish <- OTU_MiFish_cont_cleaned %>%
+ mutate(AROX = rowSums(select(., contains("AROX-S")))) %>%
+ mutate(LTC = rowSums(select(., contains("LTC-S")))) %>%
+ mutate(MC = rowSums(select(., contains("MC-S")))) %>%
+ mutate(SPG = rowSums(select(., contains("SPG-S")))) %>%
+ mutate(UFC = rowSums(select(., contains("UFC-S")))) %>%
+ select(-c(2:19))
+
+mydata_midoridatabase <- midori_16s %>%
+  full_join(midori_MiFish, by = c("Species")) %>%
+  replace(is.na(.), 0) %>%
+ mutate(AROX = rowSums(select(., contains("AROX")))) %>%
+ mutate(LTC = rowSums(select(., contains("LTC")))) %>%
+ mutate(MC = rowSums(select(., contains("MC")))) %>%
+ mutate(SPG = rowSums(select(., contains("SPG")))) %>%
+ mutate(UFC = rowSums(select(., contains("UFC")))) %>%
+  select(-c(2:11)) 
+ 
+  
+
+```
+
+
+
+```{r}
+##AROX4_gt with abundance number##
+
+AROX4 <- merge(df_AROX4, df_AROX4_16s, by = c("Species", "commonName"), all = TRUE) %>%
+ replace(is.na(.), 0)  
+  
+
+AROX4_gt <- gt(AROX4[c(1, 2, 6, 7, 13, 14)]) |>
+  cols_label(
+    sequence_reads_SR.x = html("Site Replicates"),
+    sequence_reads_SR.y = html("Site Replicates"),
+    sequence_reads_C.x = html("Field Control"),
+    sequence_reads_C.y = html("Field Control"),
+    Species = html("Species"),
+    commonName = html("")
+  ) |>
+  tab_spanner(
+    label = "12s",
+    columns = c(sequence_reads_SR.x, sequence_reads_C.x)
+  ) |>
+  tab_spanner(
+    label = "16s",
+    columns = c(sequence_reads_SR.y, sequence_reads_C.y)
+  ) |>
+ # tab_header(
+ #  title = md("**Abundance of reads of 12s and 16s rRNA mitochondrial regions**")
+  #)|>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = Species)
+    ) 
+
+AROX4_gt
+
+AROX4_gt |> gtsave("AROX4_gt.png", expand = 30)
+```
+
+```{r}
+##LTC4_gt with abundance number##
+
+LTC4 <- merge(df_LTC4, df_LTC4_16s, by = c("Species", "commonName"), all = TRUE) %>%
+ replace(is.na(.), 0)  
+
+LTC4_gt <- gt(LTC4[c(1, 2, 6, 7, 11, 12)]) |>
+  cols_label(
+    sequence_reads_SR.x = html("Site Replicates"),
+    sequence_reads_SR.y = html("Site Replicates"),
+    sequence_reads_C.x = html("Field Control"),
+    sequence_reads_C.y = html("Field Control"),
+    Species = html("Species"),
+    commonName = html("")
+  ) |>
+  tab_spanner(
+    label = "12s",
+    columns = c(sequence_reads_SR.x, sequence_reads_C.x)
+  ) |>
+  tab_spanner(
+    label = "16s",
+    columns = c(sequence_reads_SR.y, sequence_reads_C.y)
+  ) |>
+  #tab_header(
+  #  title = md("**Abundance of reads of 12s and 16s rRNA mitochondrial regions**")
+  #)|>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = Species)
+    ) 
+
+LTC4_gt
+
+LTC4_gt |> gtsave("LTC4_gt.png", expand = 30)
+```
+
+```{r}
+##MC4_gt with abundance number##
+
+MC4 <- merge(df_MC4, df_MC4_16s, by = c("Species", "commonName"), all = TRUE) %>%
+ replace(is.na(.), 0) %>% 
+ mutate_if(is.character, str_replace_all, '_', ' ') #to remove the underscores in the bluegill x green sunfish cross
+
+MC4_gt <- gt(MC4[c(1, 2, 7, 8, 14, 15)]) |>
+  cols_label(
+    sequence_reads_SR.x = html("Site Replicates"),
+    sequence_reads_SR.y = html("Site Replicates"),
+    sequence_reads_C.x = html("Field Control"),
+    sequence_reads_C.y = html("Field Control"),
+    Species = html("Species"),
+    commonName = html("")
+  ) |>
+  tab_spanner(
+    label = "12s",
+    columns = c(sequence_reads_SR.x, sequence_reads_C.x)
+  ) |>
+  tab_spanner(
+    label = "16s",
+    columns = c(sequence_reads_SR.y, sequence_reads_C.y)
+  ) |>
+  #tab_header(
+  #  title = md("**Abundance of reads of 12s and 16s rRNA mitochondrial regions**")
+  #)|>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = Species)
+    ) 
+
+MC4_gt
+
+MC4_gt |> gtsave("MC4_gt.png", expand = 30)
+```
+
+```{r}
+#SPG4_gt with abundance number##
+
+SPG4 <- merge(df_SPG4, df_SPG4_16s, by = c("Species", "commonName"), all = TRUE) %>%
+ replace(is.na(.), 0) 
+
+SPG4_gt <- gt(SPG4[c(1, 2, 6, 7, 12, 13)]) |>
+  cols_label(
+    sequence_reads_SR.x = html("Site Replicates"),
+    sequence_reads_SR.y = html("Site Replicates"),
+    sequence_reads_C.x = html("Field Control"),
+    sequence_reads_C.y = html("Field Control"),
+    Species = html("Species"),
+    commonName = html("")
+  ) |>
+  tab_spanner(
+    label = "12s",
+    columns = c(sequence_reads_SR.x, sequence_reads_C.x)
+  ) |>
+  tab_spanner(
+    label = "16s",
+    columns = c(sequence_reads_SR.y, sequence_reads_C.y)
+  ) |>
+ # tab_header(
+ #    title = md("**Abundance of reads of 12s and 16s rRNA mitochondrial regions**")
+# )|>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = Species)
+    )
+
+SPG4_gt
+
+SPG4_gt |> gtsave("SPG4_gt.png", expand = 30)
+```
+
+```{r}
+#UFC4_gt with abundance number##
+
+UFC4 <- merge(df_UFC4, df_UFC4_16s, by = c("Species", "commonName"), all = TRUE) %>%
+ replace(is.na(.), 0) 
+
+UFC4_gt <- gt(UFC4[c(1, 2, 7, 8, 13, 14)]) |>
+  cols_label(
+    sequence_reads_SR.x = html("Site Replicates"),
+    sequence_reads_SR.y = html("Site Replicates"),
+    sequence_reads_C.x = html("Field Control"),
+    sequence_reads_C.y = html("Field Control"),
+    Species = html("Species"),
+    commonName = html("")
+  ) |>
+  tab_spanner(
+    label = "12s",
+    columns = c(sequence_reads_SR.x, sequence_reads_C.x)
+  ) |>
+  tab_spanner(
+    label = "16s",
+    columns = c(sequence_reads_SR.y, sequence_reads_C.y)
+  ) |>
+  #tab_header(
+  #  title = md("**Abundance of reads of 12s and 16s rRNA mitochondrial regions**")
+  #)|>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = Species)
+    ) 
+
+UFC4_gt
+
+UFC4_gt |> gtsave("UFC4_gt.png", expand = 30)
+```
+
+```{r}
+#Create list of native fish for each watershed to highlight on tables
+
+#use ark_native df created in stats.rmd
+#Ark natives
+ark <- ark_native %>%
+  pivot_longer(names_to = "Species", values_to = "Sum", -c(Method,Site)) 
+
+ark <- data.frame(unique(ark$Species))
+
+#Platte natives
+platte <- platte_native%>%
+  pivot_longer(names_to = "Species", values_to = "Sum", -c(Method,Site)) 
+
+platte <- data.frame(unique(platte$Species))
+
+
+
+```
+
+
+```{r}
+#create data table for each site that also includes efishing data 
+
+
+##AROX##
+#run efishing_cont code in RF_database.Rmd to run following code 
+
+efishing_cont <- efishing_cont %>%
+   dplyr :: rename(Species = latinName) 
+
+####combine efishing and AROX4 (mifish and 16s) data, turn numbers to "x"
+AROX5 <- AROX4 %>%
+  full_join(efishing_cont, by = c("Species", "commonName")) %>%
+  mutate(sum_SR = sequence_reads_SR.x + sequence_reads_SR.y) %>%
+  mutate(sum_SR_X = if_else(sum_SR > 0, "X", "")) %>%
+  mutate(AROX_X = if_else(AROX > 0, "X", "")) %>%
+  filter(AROX_X=='X'| sum_SR_X =='X') %>%
+  mutate_at(c('sum_SR_X', 'AROX_X'), ~replace_na(., "")) 
+
+
+AROX5_gt <- gt(AROX5[c(1, 2, 28, 29)]) |>
+cols_label(
+    sum_SR_X = html("Detected by eDNA"),
+    AROX_X = html("Detected by conventional methods"),
+    commonName = html(""),
+    #latinName = html("Species")
+  ) |>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = Species)
+    ) |>
+  tab_source_note(
+    source_note = "Table 11. Comparison of species detection by eDNA and conventional methods on the Arkansas River (site ID AROX) 11/8/2023. Sequences ran against GenBank."
+  ) |> 
+  cols_width(
+    AROX_X ~ px(100),
+    sum_SR_X ~ px(100),
+    commonName ~ px(200),
+    #latinName ~ px(200)
+    )|> 
+cols_align(
+  align = "center",
+  columns = c(AROX_X, sum_SR_X)
+  ) |> 
+  tab_style(
+    style = list(
+      cell_fill(color = "#E0E0E0")
+    ),
+locations = cells_body(
+       rows = c(4, 6,9,13,14,15,17,19,20,21)))
+         
+        
+AROX5_gt
+
+#AROX5_gt |> gtsave("AROX5_gt.png", expand = 30)
+```
+
+```{r}
+#create data table for each site that also includes efishing data 
+
+##LTC##
+
+####combine efishing and LTC4 (mifish and 16s) data, turn numbers to "x"
+LTC5 <- LTC4 %>%
+  #dplyr :: rename(latinName = Species) %>%
+  full_join(efishing_cont, by = c("Species", "commonName")) %>%
+  mutate(sum_SR = sequence_reads_SR.x + sequence_reads_SR.y) %>%
+  mutate(sum_SR_X = if_else(sum_SR > 0, "X", "")) %>%
+  mutate(LTC_X = if_else(LTC > 0, "X", "")) %>%
+  filter(LTC_X=='X'| sum_SR_X =='X') %>%
+  mutate_at(c('sum_SR_X', 'LTC_X'), ~replace_na(., ""))
+
+LTC5_gt <- gt(LTC5[c(1, 2, 26, 27)]) |>
+cols_label(
+    sum_SR_X = html("Detected by eDNA"),
+    LTC_X = html("Detected by conventional methods"),
+    commonName = html(""),
+    #latinName = html("Species")
+  ) |>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = Species)
+    ) |>
+  tab_source_note(
+    source_note = "Table 12. Comparison of species detection by eDNA and conventional methods on Lone Tree Creek (siteID LTC) 11/14/2023. Sequences ran against GenBank."
+  ) |> 
+  cols_width(
+    LTC_X ~ px(100),
+    sum_SR_X ~ px(100),
+    commonName ~ px(200),
+    Species ~ px(200))|> 
+cols_align(
+  align = "center",
+  columns = c(LTC_X, sum_SR_X)
+  )  |> 
+  tab_style(
+    style = list(
+      cell_fill(color = "#E0E0E0")
+    ),
+locations = cells_body(
+       rows = c(1, 2, 4, 5, 6, 7)))
+
+LTC5_gt
+
+#LTC5_gt |> gtsave("LTC5_gt.png", expand = 30)
+```
+
+```{r}
+#create data table for each site that also includes efishing data 
+
+##MC##
+
+####combine efishing and MC4 (mifish and 16s) data, turn numbers to "x"
+MC5 <- MC4 %>%
+  #dplyr :: rename(latinName = Species) %>%
+  full_join(efishing_cont, by = c("Species", "commonName")) %>%
+  mutate(sum_SR = sequence_reads_SR.x + sequence_reads_SR.y) %>%
+  mutate(sum_SR_X = if_else(sum_SR > 0, "X", "")) %>%
+  mutate(MC_X = if_else(MC > 0, "X", "")) %>%
+  filter(MC_X=='X'| sum_SR_X =='X') %>%
+  mutate_at(c('sum_SR_X', 'MC_X'), ~replace_na(., ""))
+
+MC5_gt <- gt(MC5[c(1, 2, 29, 30)]) |>
+cols_label(
+    sum_SR_X = html("Detected by eDNA"),
+    MC_X = html("Detected by conventional methods"),
+    commonName = html(""),
+    #latinName = html("Species")
+  ) |>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = Species)
+    ) |>
+  tab_source_note(
+    source_note = "Table 9. Comparison of species detection by eDNA and conventional methods on Monument Creek (siteID MC) 9/26/2023. Sequences ran against GenBank."
+  ) |> 
+  cols_width(
+    MC_X ~ px(100),
+    sum_SR_X ~ px(100),
+    commonName ~ px(200),
+    Species ~ px(200))|> 
+cols_align(
+  align = "center",
+  columns = c(MC_X, sum_SR_X)
+  ) |> 
+  tab_style(
+    style = list(
+      cell_fill(color = "#E0E0E0")
+    ),
+locations = cells_body(
+       rows = c(1, 3, 6, 7, 8)))
+
+MC5_gt
+
+MC5_gt |> gtsave("MC5_gt.png", expand = 30)
+```
+
+```{r}
+#create data table for each site that also includes efishing data 
+
+##SPG##
+
+####combine efishing and SPG4 (mifish and 16s) data, turn numbers to "x"
+SPG5 <- SPG4 %>%
+  #dplyr :: rename(latinName = Species) %>%
+  full_join(efishing_cont, by = c("Species", "commonName")) %>%
+  mutate(sum_SR = sequence_reads_SR.x + sequence_reads_SR.y) %>%
+  mutate(sum_SR_X = if_else(sum_SR > 0, "X", "")) %>%
+  mutate(SPG_X = if_else(SPG > 0, "X", "")) %>%
+  filter(SPG_X=='X'| sum_SR_X =='X') %>%
+  mutate_at(c('sum_SR_X', 'SPG_X'), ~replace_na(., ""))
+
+SPG5_gt <- gt(SPG5[c(1, 2, 27, 28)]) |>
+cols_label(
+    sum_SR_X = html("Detected by eDNA"),
+    SPG_X = html("Detected by conventional methods"),
+    commonName = html(""),
+    Species = html("Species")
+  ) |>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = Species)
+    ) |>
+  tab_source_note(
+    source_note = "Table 10. Comparison of species detection by eDNA and conventional methods on the South Platte River (siteID SPG) 11/6/2023. Sequences ran against GenBank."
+  ) |> 
+  cols_width(
+    SPG_X ~ px(100),
+    sum_SR_X ~ px(100),
+    commonName ~ px(200),
+    Species ~ px(200))|> 
+cols_align(
+  align = "center",
+  columns = c(SPG_X, sum_SR_X)
+  )  |> 
+  tab_style(
+    style = list(
+      cell_fill(color = "#E0E0E0")
+    ),
+locations = cells_body(
+       rows = c(1, 3, 4, 6, 9, 10, 12, 13, 17, 18, 19, 20, 21, 23, 24, 26)))
+
+SPG5_gt
+
+SPG5_gt |> gtsave("SPG5_gt.png", expand = 30)
+```
+
+```{r}
+#create data table for each site that also includes efishing data 
+
+##UFC##
+#note: this site has 3 species in the controls that are not in the the site replicates. These control fish hits are not included in eDNA detection 
+
+####combine efishing and UFC4 (mifish and 16s) data, turn numbers to "x"
+UFC5 <- UFC4 %>%
+  #dplyr :: rename(latinName = Species) %>%
+  full_join(efishing_cont, by = c("Species", "commonName")) %>%
+  mutate(sum_SR = sequence_reads_SR.x + sequence_reads_SR.y) %>%
+  mutate(sum_SR_X = if_else(sum_SR > 0, "X", "")) %>%
+  mutate(UFC_X = if_else(UFC > 0, "X", "")) %>%
+  filter(UFC_X=='X'| sum_SR_X =='X') %>%
+  mutate_at(c('sum_SR_X', 'UFC_X'), ~replace_na(., ""))
+
+UFC5_gt <- gt(UFC5[c(1, 2, 28, 29)]) |>
+cols_label(
+    sum_SR_X = html("Detected by eDNA"),
+    UFC_X = html("Detected by conventional methods"),
+    commonName = html(""),
+    #latinName = html("Species")
+  ) |>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = Species)
+    ) |>
+  tab_source_note(
+    source_note = "Table 8. Comparison of species detection by eDNA and conventional methods on Upper Fountain Creek (siteID UFC) 9/26/2023. Sequences ran against GenBank."
+  ) |> 
+  cols_width(
+    UFC_X ~ px(100),
+    sum_SR_X ~ px(100),
+    commonName ~ px(200),
+    Species ~ px(200))|> 
+cols_align(
+  align = "center",
+  columns = c(UFC_X, sum_SR_X)
+  ) |> 
+  tab_style(
+    style = list(
+      cell_fill(color = "#E0E0E0")
+    ),
+locations = cells_body(
+       rows = c(2, 3, 5)))
+
+UFC5_gt
+
+UFC5_gt |> gtsave("UFC5_gt.png", expand = 30)
+```
+
+Taxonomy confidence as a way to measure ID reliability 
+
+```{r}
+#load in OTU sintax summary for MiFish (my data and midori blast)
+sintax_MiFish <- read_excel("C:/Users/Ellyse.Anderson/OneDrive - USDA/Documents/CPW_Fish_2024/sintax_summary_MiFish_ALT.xlsx")
+
+sintax_OTU_MiFish <- sintax_MiFish %>%
+  filter(! is.na (Match)) %>%
+  filter(!(Family %in% c("Bovidae_9895", "Hylobatidae_9577", "Sciuridae_55153", "Procyonidae_9647", "Canidae_9608", "Sphaerophragmiaceae_54204", "Columbidae_8930", "Hominidae_9604", "Castoridae_29132", "Sturnidae_9170", "Scolopacidae_8917", "Cebidae_9498", "Phyllostomidae_9415", "Turdidae_9183", "Muridae_10066", "Centrolenidae_507700", "Anatidae_8830", "Trionychidae_34907", "Passerellidae_1729112", "Morchellaceae_5192", "Tarsiidae_9475", "Heptageniidae_178295", "Equidae_9788", "Suidae_9821", "Cricetidae_337677", "family_Pallidophorina_2611350" )))
+  
+unique(sintax_OTU_MiFish$Family)
+
+#OTU_MiFish_cont (fish species only) compared to sintax_OTU_MiFish = 1540 lines vs 2,804, so there is filtering going on between the sintax output and the otu summary output. cut off looks like it is 0.60, which matches with the git hub code 
+
+```
+
+
+

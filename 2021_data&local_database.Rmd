@@ -1,0 +1,447 @@
+---
+title: "2021_data&local_database"
+output: html_document
+date: "2024-04-22"
+---
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(readxl)
+library(tidyverse)
+library(gt)
+library(plyr)
+
+getwd()
+```
+
+
+
+```{r}
+##MiFish##
+
+OTU_MiFish1 <- read.table(file = "blast_OTU_summary_MiFish_RFdata.txt", fill = TRUE, header = TRUE)
+
+codes <- read.csv('C:\\Users\\Ellyse.Anderson\\OneDrive - USDA\\Documents\\CPW_Fish_2024\\CPW_fish_codes.csv')
+
+OTU_MiFish1$read_length <- nchar((OTU_MiFish1$Sequence))
+#hist(OTU_MiFish$read_length) #break at 35 bp
+
+#clean up RF MiFish data---------------------------------
+OTU_MiFish1$Sample_cleaned <- OTU_MiFish1$Sample
+OTU_MiFish <- OTU_MiFish1 %>%
+  filter(!(Sample %in% c("LH1-1-1_S39", "LH1-1-2_S89", "LH1-1-3_S175", "LH1-2-1_S47", "LH1-2-2_S90", "LH1-2-3_S183", "LH1-3-1_S55", "LH1-3-2_S91", "LH1-3-3_S191", "LH1-b-1_S63","LH1-b-1_S24","LH1-b-2_S92","LH1-b-2_S131", "LH1-b-3_S199", "LH1-b-3_S160", "LP1-1-1_S5", "LP1-1-2_S73", "LP1-1-3_S173", "LP1-2-1_S6", "LP1-2-2_S74", "LP1-2-3_S181", "LP1-3-1_S7" , "LP1-3-2_S75","LP1-3-3_S189", "LP1-b-1_S8", "LP1-b-1_S61", "LP1-b-2_S129", "LP1-b-2_S76",  "SP1-1-1_S6", "SP1-1-2_S74", "SP1-1-3_S177",  "SP1-2-1_S42" , "SP1-2-2_S83", "SP1-2-3_S178",  "SP1-3-1_S24", "SP1-3-2_S92", "SP1-3-3_S179", "SP1-b-1_S44", "SP1-b-2_S112", "SP1-b-3_S180", "SP1-b-1_S33",  "SP1-b-2_S101", "SP1-b-3_S169", "WP1-2-1_S2", "WP1-2-2_S78", "WP1-2-3_S146", "WP1-b-1_S4", "WP1-b-2_S96", "WP1-b-3_S164",  "WP1-b-1_S28",  "WP1-b-2_S72", "WP1-b-3_S140"))) %>% #remove duplicates
+  mutate(read_length = nchar((Sequence))) %>%
+  filter(read_length > 35) %>%
+  mutate(GenBank_ID = substr(GenBank_ID, 1, 3)) %>% #simplify GenBank_ID so duplicate species can be summed into one row
+  dplyr::group_by(Sample, GenBank_ID) %>%
+  dplyr::summarize(Depth_sum = sum(Depth),
+            .groups = "drop") %>%
+  pivot_wider(names_from = Sample,
+              values_from = Depth_sum) %>%
+  replace(is.na(.), 0) %>% 
+  dplyr::rename(Hit_ID = GenBank_ID) %>%
+  mutate(LH1_SR1 = rowMeans(select(., starts_with("LH1-1")), na.rm = TRUE)) %>% #combine multiple MiSeq runs of a single site replicate by averaging (3)
+  mutate(LH1_SR2 = rowMeans(select(., starts_with("LH1-2")), na.rm = TRUE)) %>%
+  mutate(LH1_SR3 = rowMeans(select(., starts_with("LH1-3")), na.rm = TRUE)) %>%
+  mutate(LP1_SR1 = rowMeans(select(., starts_with("LP1-1")), na.rm = TRUE)) %>%
+  mutate(LP1_SR2 = rowMeans(select(., starts_with("LP1-2")), na.rm = TRUE)) %>%
+  mutate(LP1_SR3 = rowMeans(select(., starts_with("LP1-3")), na.rm = TRUE)) %>%
+  mutate(SP1_SR1 = rowMeans(select(., starts_with("SP1-1")), na.rm = TRUE)) %>%
+  mutate(SP1_SR2 = rowMeans(select(., starts_with("SP1-2")), na.rm = TRUE)) %>%
+  mutate(SP1_SR3 = rowMeans(select(., starts_with("SP1-3")), na.rm = TRUE)) %>%
+  mutate(WP1_SR1 = rowMeans(select(., starts_with("WP1-1")), na.rm = TRUE)) %>%
+  mutate(WP1_SR2 = rowMeans(select(., starts_with("WP1-2")), na.rm = TRUE)) %>%
+  select(-c(2:34)) %>% #remove the combined replicates
+  mutate(LH1 = rowSums(select(., contains("LH1")))) %>% #combine all site replicates by summing (3)
+  mutate(LP1 = rowSums(select(., contains("LP1")))) %>%
+  mutate(SP1 = rowSums(select(., contains("SP1")))) %>%
+  mutate(WP1 = rowSums(select(., contains("WP1")))) %>%
+  mutate(LH1 = round(LH1, 0)) %>% #round to whole numbers
+  mutate(LP1 = round(LP1, 0)) %>%
+  mutate(SP1 = round(SP1, 0)) %>%
+  mutate(WP1 = round(WP1, 0)) 
+  
+
+#merge dfs by code
+codes$Hit_ID <- codes$cpwCode
+OTU_MiFish <- merge(codes, OTU_MiFish, by='Hit_ID') 
+OTU_MiFish <- OTU_MiFish %>% mutate(latinName = str_replace(latinName, "_", " ")) 
+
+#note: this data does not have a SR 3 for WP1
+
+```
+
+```{r}
+##16s##
+
+OTU_16s1 <- read.table(file = "blast_OTU_summary_16s_RFdata.txt", fill = TRUE, header = TRUE)
+
+OTU_16s1$read_length <- nchar((OTU_16s1$Sequence))
+#hist(OTU_16s$read_length) #break at 33 bp
+
+#rename hits from RF's database of incorrect ID
+OTU_16s1$GenBank_ID[OTU_16s1$GenBank_ID == 'BMW06_16s'] <- 'STR'
+OTU_16s1$GenBank_ID[OTU_16s1$GenBank_ID == 'OOPS_16s'] <- 'SNF'
+
+
+#clean up RF MiFish data---------------------------------
+
+OTU_16s <- OTU_16s1 %>%
+  filter(!(Sample %in% c("LH1-1-1_S39", "LH1-1-2_S89", "LH1-1-3_S175", "LH1-2-1_S47", "LH1-2-2_S90", "LH1-2-3_S183", "LH1-3-1_S55", "LH1-3-2_S91", "LH1-3-3_S191", "LH1-b-1_S63","LH1-b-1_S24","LH1-b-2_S92","LH1-b-2_S131", "LH1-b-3_S199", "LH1-b-3_S160", "LP1-1-1_S5", "LP1-1-2_S73", "LP1-1-3_S173", "LP1-2-1_S6", "LP1-2-2_S74", "LP1-2-3_S181", "LP1-3-1_S7" , "LP1-3-2_S75","LP1-3-3_S189", "LP1-b-1_S8", "LP1-b-1_S61", "LP1-b-2_S129", "LP1-b-2_S76", "LP1-b-3_S144", "LP1-b-3_S197", "SP1-1-1_S6", "SP1-1-2_S74", "SP1-1-3_S177",  "SP1-2-1_S42" , "SP1-2-2_S83", "SP1-2-3_S178",  "SP1-3-1_S24", "SP1-3-2_S92", "SP1-3-3_S179", "SP1-b-1_S44", "SP1-b-2_S112", "SP1-b-3_S180", "SP1-b-1_S33",  "SP1-b-2_S101", "SP1-b-3_S169", "WP1-2-1_S2", "WP1-2-2_S78", "WP1-2-3_S146", "WP1-b-1_S4", "WP1-b-2_S96", "WP1-b-3_S164",  "WP1-b-1_S28",  "WP1-b-2_S72", "WP1-b-3_S140", "WP1-3-1_S3", "WP1-3-2_S87", "WP1-3-3_S155" ))) %>% #remove duplicates
+  mutate(read_length = nchar((Sequence))) %>%
+  filter(read_length > 35) %>%
+  mutate(GenBank_ID = substr(GenBank_ID, 1, 3)) %>% #simplify GenBank_ID so duplicate species can be summed into one row
+  dplyr::group_by(Sample, GenBank_ID) %>%
+  dplyr::summarize(Depth_sum = sum(Depth),
+            .groups = "drop") %>%
+  pivot_wider(names_from = Sample,
+              values_from = Depth_sum) %>%
+  replace(is.na(.), 0) %>% 
+  dplyr::rename(Hit_ID = GenBank_ID) %>%
+  mutate(LH1_SR1 = rowMeans(select(., starts_with("LH1-1")), na.rm = TRUE)) %>% #combine multiple MiSeq runs of a single site replicate by averaging (3)
+  mutate(LH1_SR2 = rowMeans(select(., starts_with("LH1-2")), na.rm = TRUE)) %>%
+  mutate(LH1_SR3 = rowMeans(select(., starts_with("LH1-3")), na.rm = TRUE)) %>%
+  mutate(LP1_SR1 = rowMeans(select(., starts_with("LP1-1")), na.rm = TRUE)) %>%
+  mutate(LP1_SR2 = rowMeans(select(., starts_with("LP1-2")), na.rm = TRUE)) %>%
+  mutate(LP1_SR3 = rowMeans(select(., starts_with("LP1-3")), na.rm = TRUE)) %>%
+  mutate(SP1_SR1 = rowMeans(select(., starts_with("SP1-1")), na.rm = TRUE)) %>%
+  mutate(SP1_SR2 = rowMeans(select(., starts_with("SP1-2")), na.rm = TRUE)) %>%
+  mutate(SP1_SR3 = rowMeans(select(., starts_with("SP1-3")), na.rm = TRUE)) %>%
+  mutate(WP1_SR1 = rowMeans(select(., starts_with("WP1-1")), na.rm = TRUE)) %>%
+  mutate(WP1_SR2 = rowMeans(select(., starts_with("WP1-2")), na.rm = TRUE)) %>%
+  select(-c(2:34)) %>% #remove the combined replicates
+  mutate(LH1 = rowSums(select(., contains("LH1")))) %>% #combine all site replicates by summing (3)
+  mutate(LP1 = rowSums(select(., contains("LP1")))) %>%
+  mutate(SP1 = rowSums(select(., contains("SP1")))) %>%
+  mutate(WP1 = rowSums(select(., contains("WP1")))) %>%
+  mutate(LH1 = round(LH1, 0)) %>% #round to whole numbers
+  mutate(LP1 = round(LP1, 0)) %>%
+  mutate(SP1 = round(SP1, 0)) %>%
+  mutate(WP1 = round(WP1, 0)) 
+
+#merge dfs by code
+codes$Hit_ID <- codes$cpwCode
+OTU_16s <- merge(codes, OTU_16s, by='Hit_ID') 
+OTU_16s <- OTU_16s %>% mutate(latinName = str_replace(latinName, "_", " ")) 
+
+
+#note: this data does not have a SR 3 for WP1
+
+
+```
+```{r}
+##MERGE##
+
+RFdata_RFdatabase <- OTU_MiFish %>%
+  full_join(OTU_16s, by = "latinName", "commonName") %>%
+  dplyr :: rename(Species = latinName) %>%
+  select(-c(1:2, 4:7, 9:21, 26:45)) %>%
+  replace(is.na(.), 0) %>%
+  mutate(LH1 = rowSums(select(., contains("LH1")))) %>% #combine two primers by site
+  mutate(LP1 = rowSums(select(., contains("LP1")))) %>%
+  mutate(SP1 = rowSums(select(., contains("SP1")))) %>%
+  mutate(WP1 = rowSums(select(., contains("WP1")))) %>%
+  select(-c(3:10)) %>%
+  dplyr :: rename(commonName = commonName.x)
+
+
+```
+
+
+###Abundance reads by site###
+
+```{r, eval=FALSE}
+##LH## 
+
+#remove rows with only zero
+LH <- RFdata[c(1, 2, 3, 7)]
+LH <- LH[!apply(LH[, 3:4] == 0, 1, all),]
+  
+
+LH_gt <- gt(LH) |>
+  tab_header(
+    title = md("**Abundance of reads of 12s and 16s rRNA mitochondrial regions**")
+  )|>
+  cols_label(
+    LH1.x = html("12s"),
+    LH1.y = html("16s"),
+    latinName = html("Species"),
+    commonName = html("")
+  ) |>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = latinName)
+    ) 
+
+LH_gt
+
+#LH_gt |> gtsave("LH_gt.png", expand = 30)
+
+```
+
+```{r, eval=FALSE}
+##LP## 
+
+#remove rows with only zero
+LP <- RFdata[c(1, 2, 4, 8)]
+LP <- LP[!apply(LP[, 3:4] == 0, 1, all),]
+  
+
+LP_gt <- gt(LP) |>
+  tab_header(
+    title = md("**Abundance of reads of 12s and 16s rRNA mitochondrial regions**")
+  )|>
+  cols_label(
+    LP1.x = html("12s"),
+    LP1.y = html("16s"),
+    latinName = html("Species"),
+    commonName = html("")
+  ) |>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = latinName)
+    ) 
+
+LP_gt
+
+#LP_gt |> gtsave("LP_gt.png", expand = 30)
+```
+
+```{r, eval=FALSE}
+##SP## 
+
+#remove rows with only zero
+SP <- RFdata[c(1, 2, 5, 9)]
+SP <- SP[!apply(SP[, 3:4] == 0, 1, all),]
+  
+
+SP_gt <- gt(SP) |>
+  tab_header(
+    title = md("**Abundance of reads of 12s and 16s rRNA mitochondrial regions**")
+  )|>
+  cols_label(
+    SP1.x = html("12s"),
+    SP1.y = html("16s"),
+    latinName = html("Species"),
+    commonName = html("")
+  ) |>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = latinName)
+    ) 
+
+SP_gt
+
+#SP_gt |> gtsave("SP_gt.png", expand = 30)
+```
+
+```{r, eval=FALSE}
+##WP## 
+
+#remove rows with only zero
+WP <- RFdata[c(1, 2, 6, 10)]
+WP <- WP[!apply(WP[, 3:4] == 0, 1, all),]
+  
+
+WP_gt <- gt(WP) |>
+  tab_header(
+    title = md("**Abundance of reads of 12s and 16s rRNA mitochondrial regions**")
+  )|>
+  cols_label(
+    WP1.x = html("12s"),
+    WP1.y = html("16s"),
+    latinName = html("Species"),
+    commonName = html("")
+  ) |>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = latinName)
+    ) 
+
+WP_gt
+
+#WP_gt |> gtsave("WP_gt.png", expand = 30)
+
+```
+
+###Detection by site###
+
+```{r, eval=FALSE}
+efishing_RFdata <- read_excel('C:\\Users\\Ellyse.Anderson\\OneDrive - USDA\\Documents\\CPW_Fish_2024\\CPW_efishing_2021_RF.xlsx')
+
+##LH##
+
+LH2 <- merge(LH, efishing_RFdata, by = c("latinName", "commonName"), all = TRUE)
+
+LH2 = LH2 %>%
+  replace(is.na(.), 0) %>%
+  mutate(sum_LH1 = LH1.x + LH1.y) %>%
+  mutate(sum_LH1_X = if_else(sum_LH1 > 0, "X", "")) %>%
+  mutate(LH_X = if_else(LH > 0, "X", "")) %>%
+  filter(sum_LH1_X=='X'| LH_X =='X')
+
+
+LH2_gt <- gt(LH2[c(2, 1, 11, 12)]) |>
+  cols_label(
+    sum_LH1_X = html("Detected by eDNA"),
+    LH_X = html("Detected by conventional methods"),
+    latinName = html(""),
+    commonName = html("Species")
+  ) |>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = latinName)
+    ) |>
+  tab_source_note(
+    source_note = "Table 1. Comparison of species detection by eDNA and conventional methods on Lefthand Creek (site ID LH1) 9/23/2021."
+  ) |> 
+  cols_width(
+    sum_LH1_X ~ px(100),
+    LH_X ~ px(100), 
+    commonName ~ px(200),
+    latinName ~ px(200))|> 
+cols_align(
+  align = "center",
+  columns = c(sum_LH1_X, LH_X))
+
+LH2_gt
+
+#LH2_gt |> gtsave("LH2_gt.png", expand = 30)
+
+
+```
+
+```{r, eval=FALSE}
+##LP##
+
+LP2 <- merge(LP, efishing_RFdata, by = c("latinName", "commonName"), all = TRUE)
+
+LP2 = LP2 %>%
+  replace(is.na(.), 0) %>%
+  mutate(sum_LP1 = LP1.x + LP1.y) %>%
+  mutate(sum_LP1_X = if_else(sum_LP1 > 0, "X", "")) %>%
+  mutate(LP_X = if_else(LP1 > 0, "X", "")) %>%
+  filter(sum_LP1_X=='X'| LP_X =='X')
+
+
+LP2_gt <- gt(LP2[c(1, 2, 11, 12)]) |>
+  cols_label(
+    sum_LP1_X = html("Detected by eDNA"),
+    LP_X = html("Detected by conventional methods"),
+    latinName = html("Species"),
+    commonName = html("")
+  ) |>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = latinName)
+    ) |>
+  tab_source_note(
+    source_note = "Table 1. Abundance of reads of two mitochondrial regions on Lodgepole Creek (site ID LP1) 9/29/2021."
+  ) |> 
+  cols_width(
+    sum_LP1_X ~ px(100),
+    LP_X ~ px(100), 
+    commonName ~ px(200),
+    latinName ~ px(200))|> 
+cols_align(
+  align = "center",
+  columns = c(sum_LP1_X, LP_X))
+
+LP1_gt
+
+#LP1_gt |> gtsave("LP1_gt.png", expand = 30)
+```
+
+```{r, eval=FALSE}
+##SP##
+
+SP2 <- merge(SP, efishing_RFdata, by = c("latinName", "commonName"), all = TRUE)
+
+SP2 = SP2 %>%
+  replace(is.na(.), 0) %>%
+  mutate(sum_SP1 = SP1.x + SP1.y) %>%
+  mutate(sum_SP1_X = if_else(sum_SP1 > 0, "X", "")) %>%
+  mutate(SP_X = if_else(SP > 0, "X", "")) %>%
+  filter(sum_SP1_X=='X'| SP_X =='X')
+
+
+SP2_gt <- gt(SP2[c(2, 1, 11, 12)]) |>
+  cols_label(
+    sum_SP1_X = html("Detected by eDNA"),
+    SP_X = html("Detected by conventional methods"),
+    latinName = html(""),
+    commonName = html("Species")
+  ) |>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = latinName)
+    ) |>
+  tab_source_note(
+    source_note = "Table 1. Abundance of reads of two mitochondrial regions on the South Platte River (site ID SP1) 10/20/2021."
+  ) |> 
+  cols_width(
+    sum_SP1_X ~ px(100),
+    SP_X ~ px(100), 
+    commonName ~ px(200),
+    latinName ~ px(200))|> 
+cols_align(
+  align = "center",
+  columns = c(sum_SP1_X, SP_X))
+
+SP2_gt
+
+#SP2_gt |> gtsave("SP2_gt.png", expand = 30)
+```
+
+```{r, eval=FALSE}
+##WP##
+
+WP2 <- merge(WP, efishing_RFdata, by = c("latinName", "commonName"), all = TRUE)
+
+WP2 = WP2 %>%
+  replace(is.na(.), 0) %>%
+  mutate(sum_WP1 = WP1.x + WP1.y) %>%
+  mutate(sum_WP1_X = if_else(sum_WP1 > 0, "X", "")) %>%
+  mutate(WP_X = if_else(WP > 0, "X", "")) %>%
+  filter(sum_WP1_X=='X'| WP_X =='X')
+
+
+WP2_gt <- gt(WP2[c(2, 1, 11, 12)]) |>
+  cols_label(
+    sum_WP1_X = html("Detected by eDNA"),
+    WP_X = html("Detected by conventional methods"),
+    latinName = html(""),
+    commonName = html("Species")
+  ) |>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = latinName)
+    ) |>
+  tab_source_note(
+    source_note = "Table 1. Abundance of reads of two mitochondrial regions on West Plum Creek (site ID WP1) 10/13/2021."
+  ) |> 
+  cols_width(
+    sum_WP1_X ~ px(100),
+    WP_X ~ px(100), 
+    commonName ~ px(200),
+    latinName ~ px(200))|> 
+cols_align(
+  align = "center",
+  columns = c(sum_WP1_X, WP_X))
+
+WP2_gt
+
+#WP2_gt |> gtsave("WP2_gt.png", expand = 30)
+```
+
+

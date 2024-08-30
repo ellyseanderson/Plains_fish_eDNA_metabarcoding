@@ -1,0 +1,62 @@
+---
+title: "Midori_and_localdatabase"
+output: html_document
+date: "2024-07-30"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(readxl)
+library(tidyverse)
+library(gt)
+library(plyr)
+```
+
+```{r}
+#first create mydata_midoridatabase, mydata_RFdatabase, RFdata_midoridatabase, RFdata_RFdatabase in other tabs
+#Determine species in RFdatabase not in midoridatabase
+
+#Mydata------------------------------------------
+unique_species <- setdiff(mydata_RFdatabase$Species, mydata_midoridatabase$Species)
+print(unique_species) 
+
+#Species found by RF database but not midori: "Hybognathus hankinsoni" "Gambusia affinis"       "Fundulus kansae"        "Hybognathus placitus"   "Fundulus sciadicus"     "Phenacobius mirabilis" "Pylodictis olivaris" 
+fish1 <- c("Hybognathus hankinsoni", "Gambusia affinis", "Fundulus sciadicus", "Phenacobius mirabilis")
+additions1_RFdatabase <- filter(mydata_RFdatabase, Species %in% fish1)
+
+
+#RFdata-----------------------------------------
+unique_species <- setdiff(RFdata_RFdatabase$Species, RFdata_midoridatabase$Species)
+print(unique_species) 
+
+#Species found by RF database but not midori: "Hybognathus hankinsoni" "Aplodinotus grunniens"  "Pylodictis olivaris"    "Etheostoma nigrum"      "Gambusia affinis"       "Fundulus kansae"      "Carpiodes cyprinus"     "Phenacobius mirabilis" 
+fish2 <- c("Hybognathus hankinsoni", "Aplodinotus grunniens","Etheostoma nigrum","Gambusia affinis", "Carpiodes cyprinus","Phenacobius mirabilis" )
+additions2_RFdatabase <- filter(RFdata_RFdatabase, Species %in% fish2)
+ #NOTE: "Pylodictis olivaris" ID by local database only, but when blasted top hit is to channel catfish, so remove because two places it is detected with the local is already reflected in the national database 
+
+#merge dfs of unique detections from RFdatabase---------------------------------
+RFdatabase_detections <- full_join(additions1_RFdatabase, additions2_RFdatabase, by = c("Species", "commonName")) %>%
+  replace(is.na(.), 0) %>%
+  dplyr :: mutate(across(c(3:11), ~ if_else(. <= 10, 0, .))) #remove all hits less than 10 sequences
+
+#table for appendix 
+localdatabase_gt <- gt(RFdatabase_detections[c(2, 1, 3, 4, 5, 6, 7, 8, 9, 10 , 11)]) |>
+  cols_label(
+    commonName = html("")
+  ) |>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = Species)
+    ) |>
+  tab_header(
+    title = md("**Species uniquely detected by the local database**"))
+        
+localdatabase_gt
+
+localdatabase_gt |> gtsave("localdatabase_gt.png", expand = 30)
+
+```
+

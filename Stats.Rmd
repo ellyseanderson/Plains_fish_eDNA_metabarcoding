@@ -1,0 +1,883 @@
+---
+title: "Stats"
+output: html_document
+date: "2024-05-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#install.packages("unmarked")
+library(vegan)
+library(dplyr)
+library(readxl)
+library(tidyverse)
+library(permute)
+library(lattice)
+library(ggplot2)
+library(unmarked)
+#install.packages("janitor")
+library(janitor)
+#install.packages("ggvenn")
+library(ggvenn)
+
+packageVersion("vegan")
+getwd()
+```
+
+```{r}
+#Data wrangling for vegan - midori pipeline and conventional methods#
+
+##eDNA-------------------------------------
+#read in OTU data (midori updated pipeline, 5 recent sites)
+OTU_16s <- read_excel("C:/Users/Ellyse.Anderson/OneDrive - USDA/Documents/CPW_Fish_2024/blast_OTU_summary_16s_ALT.xlsx")
+OTU_MiFish <- read_excel("C:/Users/Ellyse.Anderson/OneDrive - USDA/Documents/CPW_Fish_2024/blast_OTU_summary_MiFish_ATL.xlsx")
+#remove short sequences
+OTU_MiFish <- OTU_MiFish %>%
+  mutate(read_length = nchar((Sequence))) %>%
+  filter(read_length > 70) %>%
+  filter(grepl('Actinopteri', Class)) %>% #remove this line if you want to see all the species identified
+   mutate(Species = str_replace(Species, "_[^_]+$", "")) #remove _numbers after each species
+
+OTU_16s <- OTU_16s %>%
+  mutate(read_length = nchar((Sequence))) %>%
+  filter(read_length > 52) %>%
+  filter(grepl('Actinopteri', Class)) %>% #remove this line if you want to see all the species identified
+  mutate(Species = str_replace(Species, "_[^_]+$", "")) #remove _numbers after each species
+  
+  
+#read in OTU data (midori updated pipeline, 4 RF sites) and edit to remove repeats 
+OTU_MiFish_RFdata <- read_excel("C:/Users/Ellyse.Anderson/OneDrive - USDA/Documents/CPW_Fish_2024/blast_OTU_summary_MiFish_RFdata_ALT.xlsx")
+OTU_MiFish_RFdata <- OTU_MiFish_RFdata %>%
+  filter(grepl('Actinopteri', Class)) %>%
+  filter(!(Sample %in% c("LH1-1-1_S39", "LH1-1-2_S89", "LH1-1-3_S175", "LH1-2-1_S47", "LH1-2-2_S90", "LH1-2-3_S183", "LH1-3-1_S55", "LH1-3-2_S91", "LH1-3-3_S191", "LH1-b-1_S63","LH1-b-1_S24","LH1-b-2_S92","LH1-b-2_S131", "LH1-b-3_S199", "LH1-b-3_S160", "LP1-1-1_S5", "LP1-1-2_S73", "LP1-1-3_S173", "LP1-2-1_S6", "LP1-2-2_S74", "LP1-2-3_S181", "LP1-3-1_S7" , "LP1-3-2_S75","LP1-3-3_S189", "LP1-b-1_S8", "LP1-b-1_S61", "LP1-b-2_S129", "LP1-b-2_S76", "LP1-b-3_S144", "LP1-b-3_S197",  "SP1-1-1_S6", "SP1-1-2_S74", "SP1-1-3_S177",  "SP1-2-1_S42" , "SP1-2-2_S83", "SP1-2-3_S178",  "SP1-3-1_S24", "SP1-3-2_S92", "SP1-3-3_S179", "SP1-b-1_S44", "SP1-b-2_S112", "SP1-b-3_S180", "SP1-b-1_S33",  "SP1-b-2_S101", "SP1-b-3_S169", "WP1-2-1_S2", "WP1-2-2_S78", "WP1-2-3_S146", "WP1-3-1_S3", "WP1-3-2_S87", "WP1-3-3_S155", "WP1-b-1_S4", "WP1-b-2_S96", "WP1-b-3_S164",  "WP1-b-1_S28",  "WP1-b-2_S72", "WP1-b-3_S140"))) %>%
+  dplyr::group_by(Sample, Species) %>%
+  dplyr::summarize(Depth_sum = sum(Depth),
+            .groups = "drop") %>%
+  pivot_wider(names_from = Sample,
+              values_from = Depth_sum) %>%
+  replace(is.na(.), 0) %>%
+  dplyr :: mutate(sum = rowSums(across(where(is.numeric)))) %>%
+  mutate(Species = str_replace(Species, "_[^_]+$", "")) %>%
+  inner_join(Names, by = "Species") %>%
+  mutate(LH1_SR1 = rowMeans(select(., starts_with("LH1-1")), na.rm = TRUE)) %>% #combine multiple MiSeq runs of a single site replicate by averaging (3)
+  mutate(LH1_SR2 = rowMeans(select(., starts_with("LH1-2")), na.rm = TRUE)) %>%
+  mutate(LH1_SR3 = rowMeans(select(., starts_with("LH1-3")), na.rm = TRUE)) %>%
+  mutate(LP1_SR1 = rowMeans(select(., starts_with("LP1-1")), na.rm = TRUE)) %>%
+  mutate(LP1_SR2 = rowMeans(select(., starts_with("LP1-2")), na.rm = TRUE)) %>%
+  mutate(LP1_SR3 = rowMeans(select(., starts_with("LP1-3")), na.rm = TRUE)) %>%
+  mutate(SP1_SR1 = rowMeans(select(., starts_with("SP1-1")), na.rm = TRUE)) %>%
+  mutate(SP1_SR2 = rowMeans(select(., starts_with("SP1-2")), na.rm = TRUE)) %>%
+  mutate(SP1_SR3 = rowMeans(select(., starts_with("SP1-3")), na.rm = TRUE)) %>%
+  mutate(WP1_SR1 = rowMeans(select(., starts_with("WP1-1")), na.rm = TRUE)) %>%
+  mutate(WP1_SR2 = rowMeans(select(., starts_with("WP1-2")), na.rm = TRUE)) %>%
+  select(-c(2:34)) %>%
+  pivot_longer(cols = c(4:14), names_to = "Sample", values_to = "Depth") %>% #put back into original format so the following code works
+  mutate(Depth = round(Depth, 0)) %>%
+  select(-c(2)) %>%#remove sum column
+ mutate(Sample = sub("_[^_]+$", "", Sample))
+
+
+OTU_16s_RFdata <- read_excel("C:/Users/Ellyse.Anderson/OneDrive - USDA/Documents/CPW_Fish_2024/blast_OTU_summary_16s_RFdata_ALT.xlsx")
+OTU_16s_RFdata <- OTU_16s_RFdata %>%
+  filter(grepl('Actinopteri', Class)) %>%
+  filter(!(Sample %in% c("LH1-1-1_S39", "LH1-1-2_S89", "LH1-1-3_S175", "LH1-2-1_S47", "LH1-2-2_S90", "LH1-2-3_S183", "LH1-3-1_S55", "LH1-3-2_S91", "LH1-3-3_S191", "LH1-b-1_S63","LH1-b-1_S24","LH1-b-2_S92","LH1-b-2_S131", "LH1-b-3_S199", "LH1-b-3_S160", "LP1-1-1_S5", "LP1-1-2_S73", "LP1-1-3_S173", "LP1-2-1_S6", "LP1-2-2_S74", "LP1-2-3_S181", "LP1-3-1_S7" , "LP1-3-2_S75","LP1-3-3_S189", "LP1-b-1_S8", "LP1-b-1_S61", "LP1-b-2_S129", "LP1-b-2_S76", "LP1-b-3_S144", "LP1-b-3_S197",  "SP1-1-1_S6", "SP1-1-2_S74", "SP1-1-3_S177",  "SP1-2-1_S42" , "SP1-2-2_S83", "SP1-2-3_S178",  "SP1-3-1_S24", "SP1-3-2_S92", "SP1-3-3_S179", "SP1-b-1_S44", "SP1-b-2_S112", "SP1-b-3_S180", "SP1-b-1_S33",  "SP1-b-2_S101", "SP1-b-3_S169", "WP1-2-1_S2", "WP1-2-2_S78", "WP1-2-3_S146", "WP1-3-1_S3", "WP1-3-2_S87", "WP1-3-3_S155", "WP1-b-1_S4", "WP1-b-2_S96", "WP1-b-3_S164",  "WP1-b-1_S28",  "WP1-b-2_S72", "WP1-b-3_S140"))) %>%
+  dplyr::group_by(Sample, Species) %>%
+  dplyr::summarize(Depth_sum = sum(Depth),
+            .groups = "drop") %>%
+  pivot_wider(names_from = Sample,
+              values_from = Depth_sum) %>%
+  replace(is.na(.), 0) %>%
+  dplyr :: mutate(sum = rowSums(across(where(is.numeric)))) %>%
+  mutate(Species = str_replace(Species, "_[^_]+$", "")) %>%
+  inner_join(Names, by = "Species") %>%
+  mutate(LH1_SR1 = rowMeans(select(., starts_with("LH1-1")), na.rm = TRUE)) %>% #combine multiple MiSeq runs of a single site replicate by averaging (3)
+  mutate(LH1_SR2 = rowMeans(select(., starts_with("LH1-2")), na.rm = TRUE)) %>%
+  mutate(LH1_SR3 = rowMeans(select(., starts_with("LH1-3")), na.rm = TRUE)) %>%
+  mutate(LP1_SR1 = rowMeans(select(., starts_with("LP1-1")), na.rm = TRUE)) %>%
+  mutate(LP1_SR2 = rowMeans(select(., starts_with("LP1-2")), na.rm = TRUE)) %>%
+  mutate(LP1_SR3 = rowMeans(select(., starts_with("LP1-3")), na.rm = TRUE)) %>%
+  mutate(SP1_SR1 = rowMeans(select(., starts_with("SP1-1")), na.rm = TRUE)) %>%
+  mutate(SP1_SR2 = rowMeans(select(., starts_with("SP1-2")), na.rm = TRUE)) %>%
+  mutate(SP1_SR3 = rowMeans(select(., starts_with("SP1-3")), na.rm = TRUE)) %>%
+  mutate(WP1_SR1 = rowMeans(select(., starts_with("WP1-1")), na.rm = TRUE)) %>%
+  mutate(WP1_SR2 = rowMeans(select(., starts_with("WP1-2")), na.rm = TRUE)) %>%
+  mutate(WP1_SR3 = rowMeans(select(., starts_with("WP1-3")), na.rm = TRUE)) %>% #note: this data does have a SR3 for WP1, unlike other dfs of RF data
+  select(-c(2:37)) %>%
+  pivot_longer(cols = c(4:15), names_to = "Sample", values_to = "Depth") %>% #put back into original format so the following code works
+  mutate(Depth = round(Depth, 0)) %>%
+  select(-c(2)) %>%#remove sum column
+  mutate(Sample = sub("_[^_]+$", "", Sample)) #remove SR labels
+  
+  
+#note: no clear cut off for sequence reads in RF data
+
+#merge all eDNA data: primers = MiFish/16s and data = my data/RF data----------------------------
+df_list <- list(OTU_MiFish, OTU_16s, OTU_MiFish_RFdata, OTU_16s_RFdata) #CHECK TO SEE IF NUMBERS ARE REMOVED BEFORE MERGING 
+df <- df_list %>% reduce(full_join) %>%
+  mutate(Sample = str_replace(Sample, "[-:]\\w+$+|:", "" )) %>%
+  mutate(Sample = str_replace(Sample, "[-:]\\w+|:", "" ))  #remove numbers, letters, and - from site names
+
+
+#put in vegan format----------------------------------
+df_eDNA <- df %>%  
+  mutate(Species = str_replace(Species, "_", " ")) %>% #remove _ between latin name 
+  mutate(Species = str_replace(Species, "_", " ")) %>%
+  mutate(Species = str_replace(Species, "_", " ")) %>%
+  mutate(Species = str_replace(Species, "_", " ")) %>% #repeat to remove multiple underscores from sunfish x bluegill cross
+   filter(!(Species %in% c("Alburnus alburnus", "Algansea lacustris", "Ameiurus nebulosus", "Catostomus clarkii", "Catostomus macrocheilus", "Cottus gobio", "Cyprinella formosa", "Cyprinus multitaeniata", "Cyprinus pellegrini", "Erimonax monachus", "Gadus chalcogrammus", "Hybopsis winchelli", "Leuciscus idus", "Luxilus cardinalis", "Luxilus chrysocephalus", "Lythrurus matutinus", "Notropis chrosomus", "Notropis lutipinnis", "Notropis percobromus", "Notropis rubellus", "Notropis simus", "Notropis telescopus", "Notropis topeka", "Oncorhynchus kawamurae", "Oncorhynchus keta", "Oncorhynchus tshawytscha", "Parahucho perryi", "Pimephales notatus", "Pteronotropis euryzonus", "Rhinichthys evermanni", "Rhinichthys osculus", "Salmo obtusirostris", "Salmo pallaryi", "Salvelinus curilus", "Salvelinus fontinalis x Salvelinus malma", "Salvelinus leucomaenis", "Salvelinus levanidovi", "Salvelinus malma", "Siphateles bicolor", "Tiaroga cobitis", "Xyrauchen texanus", "Hybopsis amnis", "Notropis heterolepis", "Rhinichthys atratulus"))) %>%
+  dplyr::group_by(Sample, Species) %>%
+  dplyr::summarize(Depth_sum = sum(Depth),
+            .groups = "drop")%>%
+  dplyr :: mutate(across('Species', str_replace, 'Hybopsis dorsalis', 'Notropis dorsalis')) %>% #replace incorrect bms latin name with correct one
+ pivot_wider(names_from = Species,
+              values_from = Depth_sum) %>%
+  replace(is.na(.), 0) %>%
+  dplyr::rename(Site = Sample) %>%
+  dplyr :: mutate(across(c(2:36), ~ if_else(. <= 10, 0, .))) %>% #remove all hits less than or equal to 10 sequences
+  filter(!grepl('LH1', Site)) #remove LH1 site
+  
+
+
+##conventional----------------------------
+
+#transforming data sets into vegan format and merging 
+
+#my sites
+efishing_data <- read_excel('C:\\Users\\Ellyse.Anderson\\OneDrive - USDA\\Documents\\CPW_Fish_2024\\CPW_efishing_2023_corrected_sites.xlsx', sheet = 'Raw')
+codes <- read.csv('C:\\Users\\Ellyse.Anderson\\OneDrive - USDA\\Documents\\CPW_Fish_2024\\CPW_fish_codes.csv')
+efishing_data$Depth <- 1
+
+#configure efishing to vegan format before merging w RF data
+efishing_23 <- efishing_data %>%
+  dplyr::group_by(Site, SpeciesCode) %>%
+  dplyr::summarize(Depth_sum = sum(Depth),
+            .groups = "drop") %>%
+  left_join(codes, by = c("SpeciesCode" = "cpwCode")) %>%
+  mutate(latinName = str_replace(latinName, "_", " ")) %>%
+  dplyr :: mutate(across('latinName', str_replace, 'Fundulus kansae', 'Fundulus zebrinus')) %>% #correct multiple latin names for killifish
+  select(-SpeciesCode, -commonName, -order, -family, -genus, -species, -platteStatus, -arkStatus) %>%
+  pivot_wider(names_from = latinName,
+              values_from = Depth_sum) %>%
+  replace(is.na(.), 0) 
+  
+
+#RF sites into vegan format
+efishing_RFdata <- read_excel('C:\\Users\\Ellyse.Anderson\\OneDrive - USDA\\Documents\\CPW_Fish_2024\\CPW_efishing_2021_RF.xlsx')
+
+efishing_21 <- efishing_RFdata %>%
+  pivot_longer(cols = c(LH1, LP1, SP1, WP1), names_to = "Site", values_to = "Counts") %>%
+  select(-SpeciesCode, -commonName) %>%
+  dplyr :: mutate(across('latinName', str_replace, 'Fundulus kansae', 'Fundulus zebrinus')) %>% #correct multiple latin names for killifish
+  pivot_wider(names_from = latinName, values_from = Counts) %>%
+  replace(is.na(.), 0) 
+  
+
+#merge all conventional data: my sites and RF sites
+df_efishing <- efishing_21 %>%
+  full_join(efishing_23) %>%
+  replace(is.na(.), 0) %>%
+  filter(!grepl('LH1', Site)) #remove LH1 site
+
+#A <- data.frame(unique(df_efishing$latinName))
+
+```
+
+
+```{r}
+#Detection differences between eDNA blasted against RF database and conventional data
+
+#Combining my data and RF data blasted against RF database----------------------------
+#rename species to latin name 
+mydata_RFdatabase <- mydata_RFdatabase %>%
+  dplyr::rename(latinName = Species)
+
+#combine and put in vegan format
+RF_database <- mydata_RFdatabase %>%
+  full_join(RFdata_RFdatabase) %>%
+   filter(!latinName %in% c("Alburnus alburnus", "Algansea lacustris", "Ameiurus nebulosus", "Catostomus clarkii", "Catostomus macrocheilus", "Cottus gobio", "Cyprinella formosa", "Cyprinus multitaeniata", "Cyprinus pellegrini", "Erimonax monachus", "Gadus chalcogrammus", "Hybopsis winchelli", "Leuciscus idus", "Luxilus cardinalis", "Luxilus chrysocephalus", "Lythrurus matutinus", "Notropis chrosomus", "Notropis lutipinnis", "Notropis percobromus", "Notropis rubellus", "Notropis simus", "Notropis telescopus", "Notropis topeka", "Oncorhynchus kawamurae", "Oncorhynchus keta", "Oncorhynchus tshawytscha", "Parahucho perryi", "Pimephales notatus", "Pteronotropis euryzonus", "Rhinichthys evermanni", "Rhinichthys osculus", "Salmo obtusirostris", "Salmo pallaryi", "Salvelinus curilus", "Salvelinus fontinalis x Salvelinus malma", "Salvelinus leucomaenis", "Salvelinus levanidovi", "Salvelinus malma", "Siphateles bicolor", "Tiaroga cobitis", "Xyrauchen texanus", "Hybopsis amnis", "Notropis heterolepis", "Rhinichthys atratulus")) %>%
+  dplyr :: mutate(across('latinName', str_replace, 'Hybopsis dorsalis', 'Notropis dorsalis')) %>%
+  dplyr :: mutate(across('latinName', str_replace, 'Fundulus kansae', 'Fundulus zebrinus')) %>%
+  mutate_at(c(3:11), ~replace(., is.na(.), 0)) %>%
+  filter(rowSums(across(where(is.numeric)))!=0)
+
+  
+B <- data.frame(unique(RF_database$latinName))
+
+```
+
+
+
+```{r}
+##Alpha Diversity##
+
+#32 species identified from conventional detection methods, 37 species ID from eDNA 
+
+
+#editing dfs in above chunk to make usable for analysis---------------------------------
+#merge efishing and edna data frames together and include method
+#first add column to keep methods separate 
+df_eDNA_method <- df_eDNA %>% mutate(Method = c("eDNA")) 
+df_efishing_method <- df_efishing %>% mutate(Method = c("efishing"))
+
+df <- df_eDNA_method %>%
+  full_join(df_efishing_method) %>%
+  replace(is.na(.), 0) %>%
+  mutate(Site.Method = paste0(Site, ".", Method)) %>% #combine method and site 
+  column_to_rownames(var="Site.Method") %>% #make site.method into row names
+  select(-Site) %>% #remove site column but keep method
+  mutate_if(is.numeric, ~1 * (. > 0)) %>% #turn into binomial *for beta diversity*
+  relocate(Method) #move method column from middle of df to front
+   
+
+
+#alpha diversity--------------------------
+#move sample names column to row headers 
+ 
+#Shannon
+mean(diversity(df_eDNA[,2:36], index = "shannon")) 
+#mean of 9 sites alpha diversity eDNA = 1.60541
+diversity(df_eDNA[,2:36], index = "shannon")
+
+mean(diversity(df_efishing[,2:31], index = "shannon"))
+#mean of 9 sites alpha diversity efishing = 1.668446
+diversity(df_efishing[,2:31], index = "shannon")
+
+#Simpson
+#Simpson <- c(diversity(df_eDNA[,2:36], index = "simpson"), diversity(df_efishing[,2:31], index = "simpson"))
+
+
+#Kruskal wallis test
+##Shannon
+Method <- c("eDNA", "eDNA", "eDNA", "eDNA", "eDNA", "eDNA", "eDNA", "eDNA", "efishing","efishing","efishing","efishing","efishing","efishing","efishing","efishing")
+Shannon <- c(1.903372, 2.001100, 1.128600, 1.293983, 1.951833, 2.120840, 1.163708, 1.279846, 2.1136851, 1.7277726, 1.6100221, 2.0275541, 1.5275292, 1.4317114, 2.2702633, 0.6390319)
+alpha_diversity <- data.frame(Method, Shannon)
+
+
+#Wilcox 
+##Shannon
+eDNA_shannon <- c(1.903372, 2.001100, 1.128600, 1.293983, 1.951833, 2.120840, 1.163708, 1.279846)
+efishing_shannon <- c(2.1136851, 1.7277726, 1.6100221, 2.0275541, 1.5275292, 1.4317114, 2.2702633, 0.6390319)
+wilcox.test(eDNA_shannon, efishing_shannon, paired = TRUE) # p = 0.8438 
+
+#eDNA_simpson <- c(0.7981098, 0.6778004, 0.8209365, 0.5628684, 0.6743333, 0.8085398, 0.8434040, 0.5173221, 0.6042232)
+#efishing_simpson <- c(0.8324763, 0.8227834, 0.7729996, 0.7578616, 0.8336394, 0.7350427, 0.7284079, 0.8883570, 0.3400000)
+#wilcox.test(eDNA_simpson, efishing_simpson, paired = TRUE)
+
+#collapse so only one sum per species
+#average the 9 sites alpha diversity and compare the means by method - kruskal wallace test
+#box plot by method to accompany stat
+
+#beta diversity---------------------------
+#Jaccard
+betadiver(df_eDNA, method = "j")
+betadiver(df_efishing, method = "j")
+
+vegdist((df_eDNA[,2:40]), method = "bray")
+```
+
+```{r}
+
+#NMDS-------------------------------
+#wrangling data frames to work in nmds
+#make sites include method name ie AROX.edna and AROX.efishing, turn this into the row headers. Row headers must be unique, so have to combine site and method info - already created in df (in alpha diversity chunk)
+ 
+df_for_nmds <- df 
+
+
+#NMDS stats
+#calculate beta diversity for this df (bray-curtis)
+df_nmds <- metaMDS(df_for_nmds[,2:40], distance = "bray", k = 3, autotransform = TRUE, trymax=100)
+df_nmds$stress #0.04553748
+plot(df_nmds)
+
+#checking assumptions----------
+inv.dist <- vegdist(df_for_nmds[,2:40], method = "bray")
+
+inv.dispersion <- betadisper(inv.dist, group=df_for_nmds$Method)
+permutest(inv.dispersion)
+#results: test has given a non-significant result (p > 0.05), meaning that we have homogeneous variances and our model meets the assumptions
+
+#graphing---------------
+png("NMDS.png", width=6, height=5, units = "in", res = 300)
+ordiplot(df_nmds, frame.plot=FALSE)
+ordiellipse(df_nmds, df_for_nmds$Method, label = FALSE,
+            col=c("darkorchid1", "bisque1"),
+            draw = "polygon", alpha=120,  # adding ellipses to the plot, grouping by distance
+             )
+legend("topright", bty = "n",
+       c("eDNA","efishing"), fill=c("darkorchid1", "bisque1"), horiz=FALSE, cex=.9) # adding a legend
+
+theme(panel.border = element_blank(), axis.line = element_line())
+
+?ordiellipse()
+dev.off()
+
+#significance-----------------
+#PERMANOVA - compares the variation between groups to the variation within groups, df_for_perma contains no method column, only numbers 
+df_for_perma <- df %>%
+  select(-Method) 
+
+permanova <- adonis2(df_for_perma ~ Method, data = df_for_nmds) #df_for_perma doesn't include method column but df_for_nmds does
+summary(permanova)
+#result : p>0.05, no significant difference between methods, p = 0.569
+
+#ANOSIM - If a grouping variable is important, the mean rank distance among sample units within a group will be smaller than the rank distance between sample units from different groups
+df_for_anoism <- vegdist(df_for_perma)
+anoism <- with(df_for_nmds, anosim(df_for_anoism, Method)) #df_for_nmds includes method column, df_for_anoism is a value
+summary(anoism)
+#result: p>0.05, p= 0.543 
+
+
+```
+Sources:
+https://eddatascienceees.github.io/tutorial-rayrr13/#NMDSviz
+https://www.lib.virginia.edu/data/articles/starting-non-metric-multidimensional-scaling-nmds
+https://uw.pressbooks.pub/appliedmultivariatestatistics/chapter/permanova/
+https://uw.pressbooks.pub/appliedmultivariatestatistics/chapter/anosim/
+
+
+
+```{r}
+#Ven diagram of species detected by method------------------------
+#run df_eDNA until the pivot wider part 
+df_eDNA_vendiagram <- 
+
+#collapse species and make binomial 
+
+
+```
+
+
+
+
+```{r}
+##Beta diversity between two databases (all eDNA)##
+
+#format for vegan----------------------------
+midori <- mydata_midoridatabase %>% 
+  full_join(RFdata_midoridatabase, by = ("Species")) %>%
+  select(-c(2, 8)) %>%
+  replace(is.na(.), 0) 
+
+midori <- as.data.frame(t(midori)) %>%
+  row_to_names(row_number = 1) %>%
+  mutate(Database = c("Midori")) %>%
+  rownames_to_column("Site") 
+  
+
+RFdatabase <- RFdata_RFdatabase %>%
+  full_join(mydata_RFdatabase, by = "Species") %>%
+  select(-c(6)) %>%
+  replace(is.na(.), 0) 
+
+RFdatabase <- as.data.frame(t(RFdatabase)) %>%
+  row_to_names(row_number = 1) %>%
+  mutate(Database = c("Local")) %>%
+  rownames_to_column("Site") 
+
+#merge vegan formatted dfs-----------------------------------
+df_database <- midori %>% #has database column
+  full_join(RFdatabase) %>%
+  mutate(Site.Database = paste0(Site, ".", Database)) %>%
+  column_to_rownames(var="Site.Database") %>%
+  select(-Site) %>% #remove site column but keep Database
+  replace(is.na(.), 0) 
+  
+#Stats----------------------------------------------
+#calculate beta diversity for this df (bray-curtis)
+df_without_database <-  as.data.frame(df_database) %>%
+  select(-c(37)) %>% #doesnt have database column 
+  mutate_all(as.numeric)
+  
+df_nmds_database <- metaMDS(df_without_database, distance = "bray", k = 3, autotransform = TRUE, trymax=100)
+df_nmds_database$stress #0.03647407
+plot(df_nmds_database)
+  
+  
+#checking assumptions----------
+inv.dist <- vegdist(df_without_database, method = "bray")
+
+inv.dispersion <- betadisper(inv.dist, group=df_for_nmds$Method)
+permutest(inv.dispersion)
+#results: test has given a non-significant result (p > 0.05), meaning that we have homogeneous variances and our model meets the assumptions
+
+#graphing---------------
+ordiplot(df_nmds_database)
+ordiellipse(df_nmds_database, df_database$Database, label = FALSE,
+            col=c("darkslategray1", "brown1"),
+            draw = "polygon", alpha=120) # adding ellipses to the plot, grouping by distance
+legend("topright", title="Database",
+       c("NCBI","Local"), fill=c("darkslategray1", "brown1"), horiz=FALSE, cex=.9) # adding a legend
+
+
+#significance-----------------
+#PERMANOVA - compares the variation between groups to the variation within groups
+permanova <- adonis2(df_without_database ~ Database, data = df_database) 
+summary(permanova)
+#result : F = 0.946. p>0.05, no significant difference between databases. Variation within the groups is greater than variation between the two databases
+
+#ANOSIM - If a grouping variable is important, the mean rank distance among sample units within a group will be smaller than the rank distance between sample units from different groups
+df_for_anosim_database <- vegdist(df_without_database)
+anosim <- with(df_database, anosim(df_for_anosim_database, Database))
+summary(anosim)
+#result: singificance = 0.92, databases are not significantly difference
+
+```
+
+
+
+
+
+
+
+```{r}
+##Occupancy Modeling##
+
+#Create df with all midori eDNA data for my data and RF data
+mydata_midori from MiFish.Rmd and need to create RFdata_midori. RF_data_midori needs to be combined
+
+#data formatting with Amy Davis---------------------------------------------
+
+modeling_data <- Mydata_all %>%
+  pivot_longer(names_to = "Site", values_to = "eDNA",-c(latinName,commonName))%>%
+  mutate(SiteID=gsub("\\-.*","",Site),
+         Visit=paste("v",rep(1:3,260),sep=""),
+         eDNABinary=ifelse(eDNA>0,1,0))
+
+modeling_data=modeling_data[-grep("-C",modeling_data$Site),]
+modeling_data=modeling_data%>%group_by(commonName, latinName,SiteID,Visit)%>%
+  summarise(eDNAB=ifelse(sum(eDNA)>0,1,0))
+modeling_dataw=modeling_data%>%
+  pivot_wider(id_cols = c(SiteID,commonName, latinName),names_from = Visit,values_from = eDNAB)%>%
+  mutate(ch=paste(v1,v2,v3,sep=""))
+
+
+#data formatting for eDNA-------------------------------
+
+#my data and RF data (9 sites total), combine primer type, exclude control
+#first run code chunks in MiFish.Rmd so that df names are up to date / correct (my data and midori database)
+mydata_midori_allSR <- OTU_MiFish_cont_cleaned %>%
+  full_join(OTU_16s_cont_cleaned, by = "Species") %>%
+  select(-commonName.x, -commonName.y) %>% #remove common name columns
+  mutate(AROX_SR1 = rowSums(select(., contains("AROX-SR1")))) %>% #combine different primers by site and SR
+  mutate(AROX_SR2 = rowSums(select(., contains("AROX-SR2")))) %>%
+  mutate(AROX_SR3 = rowSums(select(., contains("AROX-SR3")))) %>%
+  mutate(LTC_SR1 = rowSums(select(., contains("LTC-SR1")))) %>%
+  mutate(LTC_SR2 = rowSums(select(., contains("LTC-SR2")))) %>%
+  mutate(LTC_SR3 = rowSums(select(., contains("LTC-SR3")))) %>%
+  mutate(MC_SR1 = rowSums(select(., contains("MC-SR1")))) %>%
+  mutate(MC_SR2 = rowSums(select(., contains("MC-SR2")))) %>%
+  mutate(MC_SR3 = rowSums(select(., contains("MC-SR3")))) %>%
+  mutate(SPG_SR1 = rowSums(select(., contains("SPG-SR1")))) %>%
+  mutate(SPG_SR2 = rowSums(select(., contains("SPG-SR2")))) %>%
+  mutate(SPG_SR3 = rowSums(select(., contains("SPG-SR3")))) %>%
+  mutate(UFC_SR1 = rowSums(select(., contains("UFC-SR1")))) %>%
+  mutate(UFC_SR2 = rowSums(select(., contains("UFC-SR2")))) %>%
+  mutate(UFC_SR3 = rowSums(select(., contains("UFC-SR3")))) %>%
+  select(-(2:39)) %>% #remove all other columns including C
+  replace(is.na(.), 0) 
+
+RFdata_midori_allSR <- OTU_MiFish_RFdata %>%
+  full_join(OTU_16s_RFdata, by = "Species") %>%
+  select(-commonName.x, -commonName.y) %>% #remove common name columns
+  mutate(LH1_SR1 = rowSums(select(., contains("LH1_SR1")))) %>% #combine different primers by site and SR
+  mutate(LH1_SR2 = rowSums(select(., contains("LH1_SR2")))) %>%
+  mutate(LH1_SR3 = rowSums(select(., contains("LH1_SR3")))) %>%
+  mutate(LP1_SR1 = rowSums(select(., contains("LP1_SR1")))) %>%
+  mutate(LP1_SR2 = rowSums(select(., contains("LP1_SR2")))) %>%
+  mutate(LP1_SR3 = rowSums(select(., contains("LP1_SR3")))) %>%
+  mutate(SP1_SR1 = rowSums(select(., contains("SP1_SR1")))) %>%
+  mutate(SP1_SR2 = rowSums(select(., contains("SP1_SR2")))) %>%
+  mutate(SP1_SR3 = rowSums(select(., contains("SP1_SR3")))) %>%
+  mutate(WP1_SR1 = rowSums(select(., contains("WP1_SR1")))) %>%
+  mutate(WP1_SR2 = rowSums(select(., contains("WP1_SR2")))) %>%
+  select(-(2:29), -(31:34)) %>% #remove all other columns including C. WP SR3 is only in one of the dfs, so not summed and the original kept
+  relocate(WP1_SR3, .after = last_col()) %>% #move WP1_SR3 to the last column to keep all in order
+  replace(is.na(.), 0) 
+
+#Combine my data and RF data 
+alldata <- mydata_midori_allSR %>%
+  full_join(RFdata_midori_allSR, by = "Species") %>%
+  replace(is.na(.), 0) %>%
+  mutate(Species = str_replace(Species, "_", " "),
+         Species = str_replace(Species, "_", " "),
+         Species = str_replace(Species, "_", " ")) %>% #repeated to remove all of the underscores in lepomis x lepomis cross
+  pivot_longer(names_to = "Site", values_to = "eDNA", -c(Species)) %>%
+  mutate(SiteID=gsub("\\_.*","",Site),
+         eDNABinary=ifelse(eDNA>0,1,0),
+         Visit=paste("v",rep(1:3, 324),sep=""))
+
+#data formatting for conventional detection method
+
+
+```
+
+
+
+
+
+```{r}
+#Conventional detection table 
+
+conventional_gt <- full_join(efishing_RFdata, efishing_cont, by = c("commonName")) %>%
+  select(-(8)) %>%
+  select(-(13:19)) %>%
+  replace(is.na(.), 0) %>%
+  mutate(AROX = if_else(AROX > 0, "X", "")) %>%
+  mutate(LTC = if_else(LTC > 0, "X", "")) %>%
+  mutate(MC = if_else(MC > 0, "X", "")) %>%
+  mutate(SPG = if_else(SPG > 0, "X", "")) %>%
+  mutate(UFC = if_else(UFC > 0, "X", "")) %>%
+  #mutate(LH1 = if_else(LH1 > 0, "X", "")) %>%
+  mutate(LP1 = if_else(LP1 > 0, "X", "")) %>%
+  mutate(WP1 = if_else(WP1 > 0, "X", "")) %>%
+  mutate(SP1 = if_else(SP1 > 0, "X", "")) %>%
+  select(-(1)) %>%
+  dplyr :: rename('Species' = 'latinName') %>%
+   select(-LH1)
+
+conventional_gt <- gt(conventional_gt[c(3, 2, 4:12)]) |>
+  cols_label(
+    latinName = html("Species"),
+    commonName = html("")
+  ) |>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = latinName)
+    ) |>
+  tab_spanner(
+    label = "Site",
+    columns = c(LH1, LP1, SP1, WP1, AROX, LTC, MC, SPG, UFC)
+  ) 
+
+conventional_gt
+
+conventional_gt |> gtsave("conventional_gt.png", expand = 30)
+
+#Summary table- all sites, conventional and eDNA-------------------------------------------------------------------------------------------------------------
+AROX <- AROX5 %>% select(c("commonName", "Species", "sum_SR_X")) %>% dplyr :: rename('AROX' = 'sum_SR_X')
+LTC <- LTC5 %>% select(c("commonName", "Species", "sum_SR_X")) %>% dplyr :: rename('LTC' = 'sum_SR_X')
+MC <- MC5 %>% select(c("commonName", "Species", "sum_SR_X")) %>% dplyr :: rename('MC' = 'sum_SR_X')
+SPG <- SPG5 %>% select(c("commonName", "Species", "sum_SR_X")) %>% dplyr :: rename('SPG' = 'sum_SR_X')
+UFC <- UFC5 %>% select(c("commonName", "Species", "sum_SR_X")) %>% dplyr :: rename('UFC' = 'sum_SR_X')
+#LH <- LH5  %>% select(c("commonName", "Species", "LH1")) 
+LP <- LP5  %>% select(c("commonName", "Species", "LP1")) 
+WP <- WP5  %>% select(c("commonName", "Species", "WP1")) 
+SP <- SP5  %>% select(c("commonName", "Species", "SP1")) 
+
+
+list <- list(LP, WP, SP, UFC, MC, SPG, AROX, LTC) 
+eDNA_gt <- list %>% reduce(full_join) %>%  
+ dplyr :: mutate(across('Species', str_replace, 'Fundulus zebrinus', 'Fundulus kansae')) %>%
+ dplyr :: mutate(across('commonName', str_replace, 'Plains Killifish', 'Northern Plains Killifish')) %>%
+ mutate_all(na_if, "") %>%
+ filter(if_any((3:10), ~ !is.na(.))) #remove rows with only na 
+
+
+#df of missing species from RFdatabase to add to eDNA database
+RFdatabase_detections <- RFdatabase_detections %>%
+  mutate(AROX = if_else(AROX > 0, "X", "")) %>%
+  mutate(LTC = if_else(LTC > 0, "X", "")) %>%
+  mutate(MC = if_else(MC > 0, "X", "")) %>%
+  mutate(SPG = if_else(SPG > 0, "X", "")) %>%
+  mutate(UFC = if_else(UFC > 0, "X", "")) %>%
+  mutate(LH1 = if_else(LH1 > 0, "X", "")) %>%
+  mutate(LP1 = if_else(LP1 > 0, "X", "")) %>%
+  mutate(WP1 = if_else(WP1 > 0, "X", "")) %>%
+  mutate(SP1 = if_else(SP1 > 0, "X", "")) 
+  
+
+eDNA_gt2 <- full_join(eDNA_gt, RFdatabase_detections) %>% #now this df includes midori and unique RF dataframe species detection by eDNA 
+  select(-LH1) #remove LH1 site
+   
+summary_gt <- full_join(eDNA_gt2, conventional_gt, by = c('Species', 'commonName')) %>%  replace(is.na(.), 0) %>%  arrange(Species)
+summary_gt[summary_gt == 0] <- NA
+summary_gt[summary_gt == ""] <- NA
+summary_gt  <- summary_gt %>% filter(if_any((3:18), ~ !is.na(.))) 
+summary_gt[is.na(summary_gt)] <- ""
+
+
+summary_gt1 <- gt(summary_gt) |>
+  cols_label(
+    commonName = html("Species"),
+    Species = html(""),
+    LP1.x = html("eDNA"),LP1.y = html("Conv"), 
+    WP1.x = html("eDNA"),WP1.y = html("Conv"),
+    SP1.x = html("eDNA"),SP1.y = html("Conv"),
+    UFC.x = html("eDNA"),UFC.y = html("Conv"),
+    MC.x = html("eDNA"),MC.y = html("Conv"),
+    SPG.x = html("eDNA"),SPG.y = html("Conv"),
+    AROX.x = html("eDNA"),AROX.y = html("Conv"),
+    LTC.x = html("eDNA"),LTC.y = html("Conv")
+  ) |>
+  tab_spanner(label = "LP1", columns = c(LP1.x, LP1.y)
+  ) |>
+  tab_spanner(label = "WP1", columns = c(WP1.x, WP1.y)
+  ) |>
+  tab_spanner(label = "SP1", columns = c(SP1.x, SP1.y)
+  ) |>
+  tab_spanner( label = "UFC", columns = c(UFC.x, UFC.y)
+  ) |>
+  tab_spanner(label = "MC", columns = c(MC.x, MC.y)
+  ) |>
+  tab_spanner(label = "SPG", columns = c(SPG.x, SPG.y)
+  ) |>
+  tab_spanner(label = "AROX", columns = c(AROX.x, AROX.y)
+  ) |>
+  tab_spanner(label = "LTC", columns = c(LTC.x, LTC.y)        
+  ) |>
+  tab_header(
+    title = md("**Presence of each species by detection method across sites**")
+  )|>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = Species)
+  )|>
+tab_style(
+    style = cell_borders(
+      sides = c("bottom"),
+      color = "white"),
+    locations = cells_body()  
+ )|>
+tab_options(heading.border.bottom.color = "white")
+    
+   
+summary_gt1
+
+summary_gt1 |> gtsave("summary_gt_edited.png", vwidth = 1500, expand = 10)
+
+```
+
+```{r}
+#Species richness stats
+
+species_and_mean <- read_excel("C:/Users/Ellyse.Anderson/OneDrive - USDA/Documents/CPW_Fish_2024/Total species numbers.xlsx")
+
+species_numbers <- species_and_mean %>%
+  slice(-10) %>% #remove mean row
+  slice(-1) %>% #remove LH1 site
+  select(-(6:8))
+  
+  
+#test for normality-------------
+#eDNA total 
+shapiro.test(species_numbers$`eDNA total`) #normal
+#conventional total
+shapiro.test(species_numbers$`Conventional total`) #normal
+#eDNA unique
+shapiro.test(species_numbers$`eDNA unique`) #normal
+#conventional unique
+shapiro.test(species_numbers$`Conventional unique`) #not normal
+
+#paired t-test-------------------------
+#make df 
+t.test_df_values <- species_numbers %>%
+  pivot_longer(names_to = "method", values_to = "species", -c(`Site ID`, `eDNA unique`, `Conventional unique`)) %>%
+  select(-(1:3))
+
+t.test(`species` ~ `method`, data = t.test_df_values, paired=TRUE) #p value = 0.01812
+
+
+
+
+#therefore statistically significant difference between the mean of the two methods - reject the null hypothesis
+
+```
+
+
+
+
+```{r}
+#Stats on native species only
+
+#subset native species by watershed
+#find and subset native fish by site (watershed) and species, combine the subsets into single df
+
+#create df using first chunk of code and merging from the alpha diversity chunk, but only the first two lines - don't include the site.method column  
+##Platte-------------------
+platte_native <- df %>% 
+  filter((Site %in% c("WP1", "LH1", "LP1", "SP1", "SPG", "LTC"))) %>%
+  select(`Site`, `Method`, `Ameiurus melas`, `Notropis dorsalis`, `Semotilus atromaculatus`, `Luxilus cornutus`, `Pimephales promelas`, `Etheostoma exile`, `Etheostoma nigrum`,  `Catostomus catostomus`, `Rhinichthys cataractae`, `Fundulus zebrinus`,  `Fundulus sciadicus`, `Carpiodes cyprinus`,  `Cyprinella lutrensis`, `Notropis stramineus`, `Phenacobius mirabilis`, `Lepomis cyanellus`, `Noturus flavus`, `Campostoma anomalum`, `Catostomus commersonii`) %>%
+   mutate(Site.Method = paste0(Site, ".", Method)) %>% #combine method and site 
+  column_to_rownames(var="Site.Method") %>% #make site.method into row names
+  select(-Site) %>%
+  mutate_if(is.numeric, ~1 * (. > 0)) #remove for alpha
+
+#alpha for platte--------------------------
+#method comparison
+platte_native_eDNA <- platte_native %>%
+  filter((Method %in% c("eDNA")))
+
+platte_native_conv <- platte_native %>%
+  filter((Method %in% c("efishing")))
+
+mean(diversity(platte_native_eDNA[,2:20], index = "shannon")) 
+#mean of 9 sites alpha diversity eDNA = 1.411785
+diversity(platte_native_eDNA[,2:20], index = "shannon")
+
+mean(diversity(platte_native_conv[,2:20], index = "shannon")) 
+#mean of 9 sites alpha diversity eDNA = 1.655683
+diversity(platte_native_conv[,2:20], index = "shannon") 
+
+eDNA_shannon <- c(1.2202558, 1.6033112, 0.8403275, 1.7410137, 1.8495632, 1.2162394 )
+efishing_shannon <- c(1.786930,  1.702073, 1.668589, 1.490559, 1.290081, 1.995866 )
+wilcox.test(eDNA_shannon, efishing_shannon, paired = TRUE) # p-value = 0.3125 
+
+#eDNA only, species richness comparison
+#make df for platte non natives
+platte_nonnative_eDNA <- df %>%
+  filter((Site %in% c("WP1", "LH1", "LP1", "SP1", "SPG", "LTC"))) %>%
+  select(-c(`Ameiurus melas`, `Notropis dorsalis`, `Semotilus atromaculatus`, `Luxilus cornutus`, `Pimephales promelas`, `Etheostoma exile`, `Etheostoma nigrum`,  `Catostomus catostomus`, `Rhinichthys cataractae`, `Fundulus zebrinus`,  `Fundulus sciadicus`, `Carpiodes cyprinus`,  `Cyprinella lutrensis`, `Notropis stramineus`, `Phenacobius mirabilis`, `Lepomis cyanellus`, `Noturus flavus`, `Campostoma anomalum`, `Catostomus commersonii`)) %>%
+  filter((Method %in% c("eDNA")))
+
+diversity(platte_nonnative_eDNA[,3:22], index = "shannon")
+
+eDNA_nonnative_shannon <- c(0.6571941, 1.0615741, 0.0000000, 0.4494343, 0.7165984, 0.0000000 )
+eDNA_native_shannon <- c(1.2202558, 1.6033112, 0.8403275, 1.7410137, 1.8495632, 1.2162394)
+wilcox.test(eDNA_nonnative_shannon, eDNA_native_shannon, paired = TRUE) # p-value = 0.03125
+#significant difference in alpha diversity detected by eDNA between native and nonnative species
+
+#conventional only, species richness comparison
+#make df for platte non natives 
+platte_nonnative_conv <- df %>%
+  filter((Site %in% c("WP1", "LH1", "LP1", "SP1", "SPG", "LTC"))) %>%
+  select(-c(`Ameiurus melas`, `Notropis dorsalis`, `Semotilus atromaculatus`, `Luxilus cornutus`, `Pimephales promelas`, `Etheostoma exile`, `Etheostoma nigrum`,  `Catostomus catostomus`, `Rhinichthys cataractae`, `Fundulus zebrinus`,  `Fundulus sciadicus`, `Carpiodes cyprinus`,  `Cyprinella lutrensis`, `Notropis stramineus`, `Phenacobius mirabilis`, `Lepomis cyanellus`, `Noturus flavus`, `Campostoma anomalum`, `Catostomus commersonii`)) %>%
+  filter((Method %in% c("efishing")))
+
+diversity(platte_nonnative_conv[,3:22], index = "shannon")
+
+conv_nonnative_shannon <- c(1.0730894, 1.4618429, 1.0042425, 0.0000000, 0.0000000, 0.9674322)
+efishing_shannon <- c(1.786930,  1.702073, 1.668589, 1.490559, 1.290081, 1.995866 )
+wilcox.test(conv_nonnative_shannon, efishing_shannon, paired = TRUE) # p-value = 0.03125
+
+#beta for platte----------------------------
+df_nmds_native <- metaMDS(platte_native[,2:20], distance = "bray", k = 2, autotransform = TRUE, trymax=100)
+df_nmds_native$stress #0.1170532, repeated 6 times
+
+#PERMANOVA - compares the variation between groups to the variation within groups, df_for_perma contains no method column, only numbers 
+df_for_perma <-  platte_native %>%
+  select(-Method) 
+
+permanova <- adonis2(df_for_perma ~ Method, data = platte_native) 
+summary(permanova)
+#result : p>0.05, no significant difference between methods
+
+#chao---------------
+#install.packages("OTUtable")
+library("OTUtable")
+
+chao1_richness <- apply(df_eDNA, 2, chao1)
+
+a <- df_eDNA$`Catostomus commersonii`
+view(a)
+chao1(a)
+
+a<-c(0, 1, 2, 3, 4, 5)
+chao2(a)
+
+a<-matrix(c(0,5,1,1,2,0,0,1,0,0,8,45),4,3)
+chao1(a)
+chao2(a)
+
+
+
+
+
+##Ark--------------------------------------
+ark_native <- df %>%
+  filter((Site %in% c("UFC", "MC", "AROX"))) %>%
+  select(`Site`, `Method`, `Ameiurus melas`, `Platygobio gracilis`, `Pimephales promelas`, `Rhinichthys cataractae`, `Fundulus zebrinus`, `Cyprinella lutrensis`, `Notropis stramineus`, `Phenacobius mirabilis`, `Lepomis cyanellus`, `Campostoma anomalum`, `Catostomus commersonii`) %>%
+  mutate(Site.Method = paste0(Site, ".", Method)) %>% #combine method and site 
+  column_to_rownames(var="Site.Method") %>% #make site.method into row names
+  select(-Site)
+  
+ark_native_eDNA <- ark_native %>%
+  filter((Method %in% c("eDNA")))
+
+ark_native_conv <- ark_native %>%
+  filter((Method %in% c("efishing")))
+
+diversity(ark_native_eDNA[,2:12], index = "shannon")
+
+diversity(ark_native_conv[,2:12], index = "shannon") 
+
+eDNA_shannon <- c(1.4656368, 0.6946705, 0.4992007)
+efishing_shannon <- c(1.4779456, 0.8486856, 0.0000000 )
+wilcox.test(eDNA_shannon, efishing_shannon, paired = TRUE) # p-value = 1
+
+df_nmds_native <- metaMDS(ark_native[,2:12], distance = "bray", k = 3, autotransform = TRUE, trymax=100)
+df_nmds_native$stress #not enough data
+
+
+#Ark/platte natives by method-------------------------------------
+#exclude the site.method row names for merge and add in again after combined by site and method
+natives_combined2 <- full_join(ark_native, platte_native) %>%
+   mutate(Site.Method = paste0(Site, ".", Method)) %>% #combine method and site 
+   column_to_rownames(var="Site.Method") %>%
+   replace(is.na(.), 0) %>%
+   #mutate_if(is.numeric, ~1 * (. > 0)) #turn into binomial 
+
+#alpha diversity
+natives_eDNA <- natives_combined2 %>%
+  filter((Method %in% c("eDNA"))) 
+
+natives_conv <- natives_combined2 %>%
+  filter((Method %in% c("efishing")))
+
+diversity(natives_eDNA[,3:22], index = "shannon")
+diversity(natives_conv[,3:22], index = "shannon")
+
+natives_eDNA_shannon <- c(1.4656368, 0.6946705, 0.4992007, 1.2202558, 1.6033112, 0.8403275, 1.7410137, 1.8495632, 1.2162394)
+natives_conv_shannon <- c( 1.4779456, 0.8486856, 0.0000000,  1.7869303,  1.7020726, 1.6685890, 1.4905591, 1.2900807, 1.9958660)
+wilcox.test(natives_eDNA_shannon, natives_conv_shannon, paired = TRUE) # p-value = 0.4258
+#there is no statistical difference in detection method alpha diversity of native species 
+
+
+#beta diversity 
+natives_combined2_beta <- metaMDS(natives_combined2[,3:22], distance = "bray", k = 3, autotransform = TRUE, trymax=100)
+natives_combined2_beta$stress #0.0719611
+
+df_for_perma <- natives_combined2 %>%
+    select(-c("Site", "Method")) %>%
+    mutate_if(is.numeric, ~1 * (. > 0)) #turn into binomial 
+  
+
+permanova <- adonis2(df_for_perma ~ Method, data = natives_combined2) 
+summary(permanova)
+#result : p > 0.05, significant difference between methods for native fish detection p = 0.826 
+
+
+```
+```{r}
+###synthesis table of RF database, all sites
+
+localdatabase_all <- full_join(mydata_RFdatabase, RFdata_RFdatabase) %>%
+  replace(is.na(.), 0)  %>% 
+  dplyr :: mutate(across(c(3:11), ~ if_else(. <= 10, 0, .))) #remove all hits less than or equal to 10 sequences 
+
+localdatabase_all_gt <- gt(localdatabase_all) %>%
+ cols_label(
+    commonName = html("Species"),
+    Species = html(""))
+
+localdatabase_all_gt
+
+localdatabase_all_gt |> gtsave("localdatabase_all_sites.png", vwidth = 1500, expand = 10)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+

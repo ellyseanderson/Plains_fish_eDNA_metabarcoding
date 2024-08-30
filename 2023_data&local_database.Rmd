@@ -1,0 +1,748 @@
+---
+title: "2023_data&midori_database"
+output: html_document
+date: "2024-03-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#install.packages(plyr)
+#install.packages("tidyverse")
+#install.packages("gt")
+library(dplyr)
+library(readxl)
+library(tidyverse)
+library(gt)
+library(plyr)
+
+getwd() #C:/Users/Ellyse.Anderson/OneDrive - USDA/Documents/CPW_Fish_2024
+
+```
+
+
+```{r}
+###code for adding e fishing data to the tables when received 
+
+#load in the data (excel file)
+fake_data <- read_excel('C:/Users/Ellyse.Anderson/OneDrive - USDA/Documents/CPW_Fish_2024/Electrofishing_fake_data.xlsx')
+colnames(fake_data)[1] <- 'latinName'
+fake_data$latinName <- gsub("_"," ", fake_data$latinName)
+
+SPG_1 <- merge(SPG, fake_data, by = c("latinName"), all = TRUE) %>%
+ replace(is.na(.), 0)
+
+#for the SP data, there are more edna species hits than shocking hits, so no extra species need to be added to the df. Otherwise will have to add a row with the species 
+
+SPG_1_gt <- gt(SPG_1[c(1, 2, 8, 9, 13, 14, 15)]) |>
+  tab_header(
+    title = md("**Abundance of reads of 12s and 16s rRNA mitochondrial regions**")
+  )|>
+  tab_spanner(
+    label = "12s",
+    columns = c(sequence_reads_SR.x, sequence_reads_C.x)
+  ) |>
+  tab_spanner(
+    label = "16s",
+    columns = c(sequence_reads_SR.y, sequence_reads_C.y)
+  ) |>
+  cols_label(
+    sequence_reads_SR.x = html("Site Replicates"),
+    sequence_reads_C.x = html("Field Control"),
+    sequence_reads_SR.y = html("Site Replicates"),
+    sequence_reads_C.y = html("Field Control"),
+    latinName = html("Species"),
+    commonName = html(""),
+    shockingAbund = html("Conventional Sampling Abundance")
+  ) |>
+  tab_source_note(
+    source_note = "Table 1. Abundance of reads of two mitochondrial regions on Upper Fountain Creek (siteID UFC) 9/26/2023."
+  ) |>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = latinName)
+    )
+
+
+
+SPG_1_gt
+
+```
+
+
+```{r}
+
+###MiFish### updated 
+
+#--------------------------------------------
+# Matt's addition to make the contingency table, replaces the use of cleaned_MiFish with only long sequences 
+OTU_MiFish <- read.table(file = "blast_OTU_summary_MiFish_RF.txt", fill = TRUE, header = TRUE)
+
+OTU_MiFish_cleaned_cont <- OTU_MiFish %>%
+  mutate(read_length = nchar((Sequence))) %>%
+  filter(read_length > 59) %>%
+  dplyr::group_by(Sample, Hit_ID) %>%
+  dplyr::summarize(Depth_sum = sum(Depth),
+            .groups = "drop") %>%
+  pivot_wider(names_from = Sample,
+              values_from = Depth_sum) %>%
+  replace(is.na(.), 0) 
+
+#----------------------------------------------
+
+#remove extra info from the hit id name besides just the fish codes
+OTU_MiFish_cleaned_cont$Hit_ID <- substr(OTU_MiFish_cleaned_cont$Hit_ID, 0, 3)
+
+#merge dfs by code
+codes$Hit_ID <- codes$cpwCode
+OTU_MiFish_cleaned_cont <- merge(codes, OTU_MiFish_cleaned_cont, by='Hit_ID')
+
+#combine duplicates
+OTU_MiFish_cleaned_cont <- ddply(OTU_MiFish_cleaned_cont, (c("Hit_ID", "commonName", "latinName")),numcolwise(sum))
+
+#remove unnecessary columns
+OTU_MiFish_cleaned_cont <- subset(OTU_MiFish_cleaned_cont, select = -c(1))
+
+#view(OTU_MiFish_cleaned_cont)
+
+```
+
+
+
+```{r}
+###MiFish###
+
+##AROX##
+df_AROX2 <- data.frame(map(set_names(c("latinName", "commonName", "AROX")),~select(OTU_MiFish_cleaned_cont,starts_with(.x))))
+df_AROX2$sequence_reads_SR <- df_AROX2 %>% select(3:5) %>% rowSums(na.rm=TRUE)
+#df_AROX2$sequence_reads_C <- df_AROX2 %>% select(3:4) %>% rowSums(na.rm=TRUE) #from previous df that included controls 
+df_AROX2$sequence_reads_C <- 0
+df_AROX2 <- df_AROX2[!(df_AROX2$sequence_reads_C== 0 & df_AROX2$sequence_reads_SR== 0),] #remove rows with only 0 
+
+##LTC##
+df_LTC2 <- data.frame(map(set_names(c("latinName", "commonName", "LTC")),~select(OTU_MiFish_cleaned_cont,starts_with(.x))))
+df_LTC2$sequence_reads_SR <- df_LTC2 %>% select(3:5) %>% rowSums(na.rm=TRUE)
+#df_LTC2$sequence_reads_C <- df_LTC2 %>% select(3) %>% rowSums(na.rm=TRUE)
+df_LTC2$sequence_reads_C <- 0
+df_LTC2 <- df_LTC2[!(df_LTC2$sequence_reads_C== 0 & df_LTC2$sequence_reads_SR== 0),]
+
+##MC##
+df_MC2 <- data.frame(map(set_names(c("latinName", "commonName", "MC")),~select(OTU_MiFish_cleaned_cont,starts_with(.x))))
+df_MC2$sequence_reads_SR <- df_MC2 %>% select(3:5) %>% rowSums(na.rm=TRUE)
+df_MC2$sequence_reads_C <- df_MC2 %>% select(3) %>% rowSums(na.rm=TRUE)
+df_MC2 <- df_MC2[!(df_MC2$sequence_reads_C== 0 & df_MC2$sequence_reads_SR== 0),]
+
+##SPG##
+df_SPG2 <- data.frame(map(set_names(c("latinName", "commonName", "SPG")),~select(OTU_MiFish_cleaned_cont,starts_with(.x))))
+df_SPG2$sequence_reads_SR <- df_SPG2 %>% select(3:5) %>% rowSums(na.rm=TRUE)
+#df_SPG2$sequence_reads_C <- df_SPG2 %>% select(3:4) %>% rowSums(na.rm=TRUE)
+df_SPG2$sequence_reads_C <- 0
+df_SPG2 <- df_SPG2[!(df_SPG2$sequence_reads_C== 0 & df_SPG2$sequence_reads_SR== 0),]
+
+##UFC##
+df_UFC2 <- data.frame(map(set_names(c("latinName", "commonName", "UFC")),~select(OTU_MiFish_cleaned_cont,starts_with(.x))))
+df_UFC2$sequence_reads_SR <- df_UFC2 %>% select(3:5) %>% rowSums(na.rm=TRUE)
+#df_UFC2$sequence_reads_C <- df_UFC2 %>% select(3:4) %>% rowSums(na.rm=TRUE)
+df_UFC2$sequence_reads_C <- 0
+df_UFC2 <- df_UFC2[!(df_UFC2$sequence_reads_C== 0 & df_UFC2$sequence_reads_SR== 0),]
+```
+
+```{r}
+###16s###
+
+#load contingency table again without any changes 
+cont_16s <- read.table(file = "blast_species_contingency_table_16s_RF.txt", header = TRUE)
+
+#counting the number of bases in the sequence column 
+OTU_16s$read_length <- nchar((OTU_16s$Sequence))
+#hist(OTU_16s$read_length) #all sequences 32-36 or 86-100 
+
+#remove all rows that have less than 85 bp 
+OTU_16s_cleaned <- subset(OTU_16s, read_length>85)
+
+#check the species that got deleted 
+#OTU_deleted <- subset(OTU_16s, read_length>85) 
+unique(OTU_16s_cleaned$Hit_ID)
+
+#remove three PMW hits from MC C2, each sequence has a top hit of LND in ncbi blast
+OTU_16s_cleaned <- OTU_16s_cleaned[!grepl('PMW', OTU_16s_cleaned$Hit_ID),]
+
+#new df with the long sequences only and replace na with 0 
+cleaned_16s <- cont_16s[(cont_16s$Hit_ID %in% OTU_16s_cleaned$Hit_ID),] %>% 
+  replace(is.na(.), 0) 
+
+#incorrect sequences in RF's 16s fasta file, smm and rbd are switched. Rename all rbd (only in AROX) with smm 
+cleaned_16s$Hit_ID[cleaned_16s$Hit_ID == 'SRD02_16s'] <- 'SMM03_MiFish'
+
+#remove extra info from the hit id name besides just the fish codes
+cleaned_16s$Hit_ID <- substr(cleaned_16s$Hit_ID, 0, 3)
+
+#merge dfs by code
+codes$Hit_ID <- codes$cpwCode
+cleaned_16s <- merge(codes, cleaned_16s, by='Hit_ID')
+
+#combine duplicates
+cleaned_16s <- ddply(cleaned_16s, (c("Hit_ID", "commonName", "latinName")),numcolwise(sum))
+
+#remove unnecessary columns
+cleaned_16s <- subset(cleaned_16s, select = -c(1))
+
+```
+
+```{r}
+###16s### updated 
+
+#--------------------------------------------
+# Matt's addition to make the contingency table, replaces the use of cleaned_16s with only long sequences 
+OTU_16s <- read.table(file = "blast_OTU_summary_16s_RF.txt", fill = TRUE, header = TRUE)
+
+OTU_16s_cleaned_cont <- OTU_16s %>%
+  mutate(read_length = nchar((Sequence))) %>%
+  filter(read_length > 85) %>%
+  dplyr::group_by(Sample, Hit_ID) %>%
+  dplyr::summarize(Depth_sum = sum(Depth),
+            .groups = "drop") %>%
+  pivot_wider(names_from = Sample,
+              values_from = Depth_sum) %>%
+  replace(is.na(.), 0) 
+
+#----------------------------------------------
+#incorrect sequences in RF's 16s fasta file, smm and rbd are switched. Rename all rbd (only in AROX) with smm. same issue with OOPS_16s coding for SNF 
+OTU_16s_cleaned_cont$Hit_ID[OTU_16s_cleaned_cont$Hit_ID == 'SRD02_16s'] <- 'SMM03_MiFish'
+OTU_16s_cleaned_cont$Hit_ID[OTU_16s_cleaned_cont$Hit_ID == 'OOPS_16s'] <- 'SNF'
+
+
+#remove extra info from the hit id name besides just the fish codes
+OTU_16s_cleaned_cont$Hit_ID <- substr(OTU_16s_cleaned_cont$Hit_ID, 0, 3)
+
+#merge dfs by code
+codes$Hit_ID <- codes$cpwCode
+OTU_16s_cleaned_cont <- merge(codes, OTU_16s_cleaned_cont, by='Hit_ID')
+
+#combine duplicates
+OTU_16s_cleaned_cont <- ddply(OTU_16s_cleaned_cont, (c("Hit_ID", "commonName", "latinName")),numcolwise(sum))
+
+#remove unnecessary columns
+OTU_16s_cleaned_cont <- subset(OTU_16s_cleaned_cont, select = -c(1))
+
+
+#view(OTU_16s_cleaned_cont)
+
+```
+
+
+```{r}
+###16s###
+
+##AROX##
+df_AROX2_16s <- data.frame(map(set_names(c("latinName", "commonName", "AROX")),~select(OTU_16s_cleaned_cont,starts_with(.x))))
+df_AROX2_16s$sequence_reads_SR <- df_AROX2_16s %>% select(3:5) %>% rowSums(na.rm=TRUE)
+#df_AROX2_16s$sequence_reads_C <- df_AROX2_16s %>% select(3:4) %>% rowSums(na.rm=TRUE)
+df_AROX2_16s$sequence_reads_C <- 0
+df_AROX2_16s <- df_AROX2_16s[!(df_AROX2_16s$sequence_reads_C== 0 & df_AROX2_16s$sequence_reads_SR== 0),] #remove rows with only 0 
+
+##LTC##
+df_LTC2_16s<- data.frame(map(set_names(c("latinName", "commonName", "LTC")),~select(OTU_16s_cleaned_cont,starts_with(.x))))
+df_LTC2_16s$sequence_reads_SR <- df_LTC2_16s %>% select(3) %>% rowSums(na.rm=TRUE)
+df_LTC2_16s$sequence_reads_C <- 0
+df_LTC2_16s <- df_LTC2_16s[!(df_LTC2_16s$sequence_reads_C== 0 & df_LTC2_16s$sequence_reads_SR== 0),]
+
+##MC##
+df_MC2_16s<- data.frame(map(set_names(c("latinName", "commonName", "MC")),~select(OTU_16s_cleaned_cont,starts_with(.x))))
+df_MC2_16s$sequence_reads_SR <- df_MC2_16s %>% select(3:5) %>% rowSums(na.rm=TRUE)
+#df_MC2_16s$sequence_reads_C <- df_MC2_16s %>% select(3) %>% rowSums(na.rm=TRUE) #exclude C2 bc of contamination w LND that is not present in C1???
+df_MC2_16s$sequence_reads_C <- 0
+df_MC2_16s <- df_MC2_16s[!(df_MC2_16s$sequence_reads_C== 0 & df_MC2_16s$sequence_reads_SR== 0),]
+
+##SPG##
+df_SPG2_16s<- data.frame(map(set_names(c("latinName", "commonName", "SPG")),~select(OTU_16s_cleaned_cont,starts_with(.x))))
+df_SPG2_16s$sequence_reads_SR <- df_SPG2_16s %>% select(3:5) %>% rowSums(na.rm=TRUE)
+#no control off of the MiSeq
+df_SPG2_16s$sequence_reads_C <- 0
+df_SPG2_16s <- df_SPG2_16s[!(df_SPG2_16s$sequence_reads_SR== 0),]
+
+##UFC##
+df_UFC2_16s<- data.frame(map(set_names(c("latinName", "commonName", "UFC")),~select(OTU_16s_cleaned_cont,starts_with(.x))))
+df_UFC2_16s$sequence_reads_SR <- df_UFC2_16s %>% select(3:5) %>% rowSums(na.rm=TRUE)
+#df_UFC2_16s$sequence_reads_C <- df_UFC2_16s %>% select(3:4) %>% rowSums(na.rm=TRUE)
+df_UFC2_16s$sequence_reads_C <- 0
+df_UFC2_16s <- df_UFC2_16s[!(df_UFC2_16s$sequence_reads_C== 0 & df_UFC2_16s$sequence_reads_SR== 0),]
+
+```
+
+```{r}
+##MERGE##
+#remove unwanted columns first
+OTU_MiFish <- OTU_MiFish_cleaned_cont %>%
+ mutate(AROX = rowSums(select(., contains("AROX-S")))) %>%
+ mutate(LTC = rowSums(select(., contains("LTC-S")))) %>%
+ mutate(MC = rowSums(select(., contains("MC-S")))) %>%
+ mutate(SPG = rowSums(select(., contains("SPG-S")))) %>%
+ mutate(UFC = rowSums(select(., contains("UFC-S")))) %>%
+ select(-c(3:18))
+
+OTU_16s <- OTU_16s_cleaned_cont %>%
+  mutate(AROX = rowSums(select(., contains("AROX-S")))) %>%
+ mutate(LTC = rowSums(select(., contains("LTC-S")))) %>%
+ mutate(MC = rowSums(select(., contains("MC-S")))) %>%
+ mutate(SPG = rowSums(select(., contains("SPG-S")))) %>%
+ mutate(UFC = rowSums(select(., contains("UFC-S")))) %>%
+ select(-c(3:16))
+
+#merge 
+
+
+#merge MiFish and 16s dataframes (.x = MiFish, .y = 16s)
+mydata_RFdatabase <- full_join(OTU_16s, OTU_MiFish, by = c("latinName", "commonName")) %>%
+  replace(is.na(.), 0) %>%
+  mutate(AROX = rowSums(select(., contains("AROX")))) %>%
+ mutate(LTC = rowSums(select(., contains("LTC")))) %>%
+ mutate(MC = rowSums(select(., contains("MC")))) %>%
+ mutate(SPG = rowSums(select(., contains("SPG")))) %>%
+ mutate(UFC = rowSums(select(., contains("UFC")))) %>%
+  select(-c(3:12)) %>%
+  dplyr:: rename('Species' = 'latinName') %>%
+    mutate(Species = str_replace(Species, "_", " ")) 
+ 
+ 
+
+ 
+
+
+```
+
+
+
+```{r}
+##AROX2_gt##
+
+AROX2 <- merge(df_AROX2, df_AROX2_16s, by = c("latinName", "commonName"), all = TRUE) %>%
+ replace(is.na(.), 0)  
+AROX2$latinName <- gsub("_"," ", AROX2$latinName)
+
+AROX2_gt <- gt(AROX2[c(1, 2, 6, 7, 11, 12)]) |>
+  tab_header(
+    title = md("**Abundance of reads of 12s and 16s rRNA mitochondrial regions**")
+  )|>
+  tab_spanner(
+    label = "12s",
+    columns = c(sequence_reads_SR.x, sequence_reads_C.x)
+  ) |>
+  tab_spanner(
+    label = "16s",
+    columns = c(sequence_reads_SR.y, sequence_reads_C.y)
+  ) |>
+  cols_label(
+    sequence_reads_SR.x = html("Site Replicates"),
+    sequence_reads_C.x = html("Field Control"),
+    sequence_reads_SR.y = html("Site Replicates"),
+    sequence_reads_C.y = html("Field Control"),
+    latinName = html("Species"),
+    commonName = html("")
+  ) |>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = latinName)
+    ) 
+
+AROX2_gt
+
+AROX2_gt |> gtsave("AROX2_gt.png", expand = 30)
+
+
+```
+
+```{r}
+###LTC2_gt###
+
+LTC2 <- merge(df_LTC2, df_LTC2_16s, by = c("latinName", "commonName"), all = TRUE) %>%
+ replace(is.na(.), 0)  #alternate way to merge both data frames and keep the sequence reads columns separate, no longer need to sum columns again or remove rows with only 0s 
+LTC2$latinName <- gsub("_"," ", LTC2$latinName)
+
+LTC2_gt <- gt(LTC2[c(1, 2, 6, 7, 9, 10)]) |>
+  tab_header(
+    title = md("**Abundance of reads of 12s and 16s rRNA mitochondrial regions**")
+  )|>
+  tab_spanner(
+    label = "12s",
+    columns = c(sequence_reads_SR.x, sequence_reads_C.x)
+  ) |>
+  tab_spanner(
+    label = "16s",
+    columns = c(sequence_reads_SR.y, sequence_reads_C.y)
+  ) |>
+  cols_label(
+    sequence_reads_SR.x = html("Site Replicates"),
+    sequence_reads_C.x = html("Field Control"),
+    sequence_reads_SR.y = html("Site Replicates"),
+    sequence_reads_C.y = html("Field Control"),
+    latinName = html("Species"),
+    commonName = html("")
+  ) |>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = latinName)
+    ) 
+
+LTC2_gt
+
+LTC2_gt |> gtsave("LTC2_gt.png", expand = 30)
+```
+
+```{r}
+###MC2_gt###
+
+MC2 <- merge(df_MC2, df_MC2_16s, by = c("latinName", "commonName"), all = TRUE) %>%
+ replace(is.na(.), 0)  #alternate way to merge both data frames and keep the sequence reads columns separate, no longer need to sum columns again or remove rows with only 0s 
+MC2$latinName <- gsub("_"," ", MC2$latinName)
+
+MC2_gt <- gt(MC2[c(1, 2, 7, 8, 13, 14)]) |>
+  tab_header(
+    title = md("**Abundance of reads of 12s and 16s rRNA mitochondrial regions**")
+  )|>
+  tab_spanner(
+    label = "12s",
+    columns = c(sequence_reads_SR.x, sequence_reads_C.x)
+  ) |>
+  tab_spanner(
+    label = "16s",
+    columns = c(sequence_reads_SR.y, sequence_reads_C.y)
+  ) |>
+  cols_label(
+    sequence_reads_SR.x = html("Site Replicates"),
+    sequence_reads_C.x = html("Field Control"),
+    sequence_reads_SR.y = html("Site Replicates"),
+    sequence_reads_C.y = html("Field Control"),
+    latinName = html("Species"),
+    commonName = html("")
+  ) |>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = latinName)
+    ) 
+
+MC2_gt
+
+MC2_gt |> gtsave("MC2_gt.png", expand = 30)
+```
+
+```{r}
+###SPG2_gt###
+SPG2 <- merge(df_SPG2, df_SPG2_16s, by = c("latinName", "commonName"), all = TRUE) %>%
+ replace(is.na(.), 0)
+SPG2$latinName <- gsub("_"," ", SPG2$latinName)
+
+SPG2_gt <- gt(SPG2[c(1, 2, 6, 7, 11, 12)]) |>
+  tab_header(
+    title = md("**Abundance of reads of 12s and 16s rRNA mitochondrial regions**")
+  )|>
+  tab_spanner(
+    label = "12s",
+    columns = c(sequence_reads_SR.x, sequence_reads_C.x)
+  ) |>
+  tab_spanner(
+    label = "16s",
+    columns = c(sequence_reads_SR.y, sequence_reads_C.y)
+  ) |>
+  cols_label(
+    sequence_reads_SR.x = html("Site Replicates"),
+    sequence_reads_C.x = html("Field Control"),
+    sequence_reads_SR.y = html("Site Replicates"),
+    sequence_reads_C.y = html("Field Control"),
+    latinName = html("Species"),
+    commonName = html("")
+  ) |>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = latinName)
+    ) 
+
+SPG2_gt
+
+SPG2_gt |> gtsave("SPG2_gt.png", expand = 30)
+```
+
+```{r}
+###UFC2_gt###
+
+UFC2 <- merge(df_UFC2, df_UFC2_16s, by = c("latinName", "commonName"), all = TRUE) %>%
+ replace(is.na(.), 0)
+UFC2$latinName <- gsub("_"," ", UFC2$latinName)
+
+UFC2_gt <- gt(UFC2[c(1, 2, 6, 7, 11, 12)]) |>
+  tab_header(
+    title = md("**Abundance of reads of 12s and 16s rRNA mitochondrial regions**")
+  )|>
+  tab_spanner(
+    label = "12s",
+    columns = c(sequence_reads_SR.x, sequence_reads_C.x)
+  ) |>
+  tab_spanner(
+    label = "16s",
+    columns = c(sequence_reads_SR.y, sequence_reads_C.y)
+  ) |>
+  cols_label(
+    sequence_reads_SR.x = html("Site Replicates"),
+    sequence_reads_C.x = html("Field Control"),
+    sequence_reads_SR.y = html("Site Replicates"),
+    sequence_reads_C.y = html("Field Control"),
+    latinName = html("Species"),
+    commonName = html("")
+  ) |>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = latinName)
+    ) 
+
+UFC2_gt
+
+UFC2_gt |> gtsave("UFC2_gt.png", expand = 30)
+```
+
+```{r}
+###adding shocking data to tables###
+
+efishing_data <- read_excel('C:\\Users\\Ellyse.Anderson\\OneDrive - USDA\\Documents\\CPW_Fish_2024\\CPW_efishing_2023_corrected_sites.xlsx', sheet = 'Raw')
+codes <- read.csv('C:\\Users\\Ellyse.Anderson\\OneDrive - USDA\\Documents\\CPW_Fish_2024\\CPW_fish_codes.csv')
+
+#add a column for "depth" for each fish ID, which would be one per entry 
+efishing_data$Depth <- 1
+
+efishing_cont <- efishing_data %>%
+  dplyr::group_by(Site, SpeciesCode) %>%
+  dplyr::summarize(Depth_sum = sum(Depth),
+            .groups = "drop") %>%
+  pivot_wider(names_from = Site,
+              values_from = Depth_sum) %>%
+  replace(is.na(.), 0) 
+
+#check all species are included
+length(unique(efishing_data$SpeciesCode))
+
+#merge dfs by code
+efishing_cont <- merge(efishing_cont, codes, by.x='SpeciesCode', by.y='cpwCode')
+efishing_cont$latinName <- gsub("_"," ", efishing_cont$latinName)
+
+```
+
+
+```{r}
+#create data table for each site that also includes efishing data 
+
+##AROX##
+
+####combine efishing and AROX2 (mifish and 16s) data, turn numbers to "x"
+
+AROX3 <- merge(AROX2, efishing_cont, by = c("latinName", "commonName"), all = TRUE)
+AROX3 = AROX3 %>%
+  replace(is.na(.), 0) %>%
+  mutate(sum_SR = sequence_reads_SR.x + sequence_reads_SR.y) %>%
+  mutate(sum_SR_X = if_else(sum_SR > 0, "X", "")) %>%
+  mutate(AROX_X = if_else(AROX > 0, "X", "")) %>%
+  filter(AROX_X=='X'| sum_SR_X =='X')
+
+AROX3_gt <- gt(AROX3[c(2, 1, 26, 27)]) |>
+  cols_label(
+    sum_SR_X = html("Detected by eDNA"),
+    AROX_X = html("Detected by conventional methods"),
+    commonName = html("Species"),
+    latinName = html("")
+  ) |>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = latinName)
+    ) |>
+  tab_source_note(
+    source_note = "Table 1. Comparison of species detection by eDNA and conventional methods on the Arkansas River (site ID AROX) 11/8/2023. Sequences ran against local database."
+  ) |> 
+  cols_width(
+    AROX_X ~ px(100),
+    sum_SR_X ~ px(100),
+    commonName ~ px(200),
+    latinName ~ px(200))|> 
+cols_align(
+  align = "center",
+  columns = c(AROX_X, sum_SR_X))
+
+AROX3_gt
+
+AROX3_gt |> gtsave("AROX3_gt.png", expand = 30)
+
+```
+
+```{r}
+##LTC##
+
+LTC3 <- merge(LTC2, efishing_cont, by = c("latinName", "commonName"), all = TRUE)
+LTC3 = LTC3 %>%
+  replace(is.na(.), 0) %>%
+  mutate(sum_SR = sequence_reads_SR.x + sequence_reads_SR.y) %>%
+  mutate(sum_SR_X = if_else(sum_SR > 0, "X", "")) %>%
+  mutate(LTC_X = if_else(LTC > 0, "X", "")) %>%
+  filter(LTC_X=='X'| sum_SR_X =='X')
+
+
+LTC3_gt <- gt(LTC3[c(2, 1, 24, 25)]) |>
+  cols_label(
+    sum_SR_X = html("Detected by eDNA"),
+    LTC_X = html("Detected by conventional methods"),
+    commonName = html("Species"),
+    latinName = html("")
+  ) |>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = latinName)
+    ) |>
+  tab_source_note(
+    source_note = "Table 1. Abundance of reads of two mitochondrial regions on Lone Tree Creek (site ID LTC) 11/14/2023. Sequences ran against local database."
+  ) |> 
+  cols_width(
+    LTC_X ~ px(100),
+    sum_SR_X ~ px(100),
+    commonName ~ px(200),
+    latinName ~ px(200))|> 
+cols_align(
+  align = "center",
+  columns = c(LTC_X, sum_SR_X))
+
+LTC3_gt
+
+LTC3_gt |> gtsave("LTC3_gt.png", expand = 30)
+```
+
+```{r}
+##MC##
+
+MC3 <- merge(MC2, efishing_cont, by = c("latinName", "commonName"), all = TRUE)
+MC3 = MC3 %>%
+  replace(is.na(.), 0) %>%
+  mutate(sum_SR = sequence_reads_SR.x + sequence_reads_SR.y) %>%
+  mutate(sum_SR_X = if_else(sum_SR > 0, "X", "")) %>%
+  mutate(MC_X = if_else(MC > 0, "X", "")) %>%
+  filter(MC_X=='X'| sum_SR_X =='X')
+
+MC3_gt <- gt(MC3[c(2, 1, 28, 29)]) |>
+  cols_label(
+    sum_SR_X = html("Detected by eDNA"),
+    MC_X = html("Detected by conventional methods"),
+    commonName = html("Species"),
+    latinName = html("")
+  ) |>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = latinName)
+    ) |>
+  tab_source_note(
+    source_note = "Table 1. Abundance of reads of two mitochondrial regions on Monument Creek (site ID MC) 9/26/2023. Sequences ran against local database."
+  ) |> 
+  cols_width(
+    MC_X ~ px(100),
+    sum_SR_X ~ px(100),
+    commonName ~ px(200),
+    latinName ~ px(200))|> 
+cols_align(
+  align = "center",
+  columns = c(MC_X, sum_SR_X))
+
+
+MC3_gt
+
+MC3_gt |> gtsave("MC3_gt.png", expand = 30)
+
+```
+
+```{r}
+##SPG##
+
+SPG3 <- merge(SPG2, efishing_cont, by = c("latinName", "commonName"), all = TRUE)
+SPG3 = SPG3 %>%
+  replace(is.na(.), 0) %>%
+  mutate(sum_SR = sequence_reads_SR.x + sequence_reads_SR.y) %>%
+  mutate(sum_SR_X = if_else(sum_SR > 0, "X", "")) %>%
+  mutate(SPG_X = if_else(SPG > 0, "X", "")) %>%
+  filter(SPG_X=='X'| sum_SR_X =='X')
+
+SPG3_gt <- gt(SPG3[c(2, 1, 26, 27)]) |>
+  cols_label(
+    sum_SR_X = html("Detected by eDNA"),
+    SPG_X = html("Detected by conventional methods"),
+    commonName = html("Species"),
+    latinName = html("")
+  ) |>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = latinName)
+    ) |>
+  tab_source_note(
+    source_note = "Table 1. Abundance of reads of two mitochondrial regions on the South Platte River (site ID SPG) 11/6/2023. Sequences ran against local database."
+  ) |> 
+  cols_width(
+    SPG_X ~ px(100),
+    sum_SR_X ~ px(100),
+    commonName ~ px(200),
+    latinName ~ px(200))|> 
+cols_align(
+  align = "center",
+  columns = c(SPG_X, sum_SR_X))
+
+SPG3_gt
+
+SPG3_gt |> gtsave("SPG3_gt.png", expand = 30)
+```
+
+```{r}
+##UFC##
+
+UFC3 <- merge(UFC2, efishing_cont, by = c("latinName", "commonName"), all = TRUE)
+UFC3 = UFC3 %>%
+  replace(is.na(.), 0) %>%
+  mutate(sum_SR = sequence_reads_SR.x + sequence_reads_SR.y) %>%
+  mutate(sum_SR_X = if_else(sum_SR > 0, "X", "")) %>%
+  mutate(UFC_X = if_else(UFC > 0, "X", "")) %>%
+  filter(UFC_X=='X'| sum_SR_X =='X')
+
+UFC3_gt <- gt(UFC3[c(2, 1, 26, 27)]) |>
+  cols_label(
+    sum_SR_X = html("Detected by eDNA"),
+    UFC_X = html("Detected by conventional methods"),
+    commonName = html("Species"),
+    latinName = html("")
+  ) |>
+  tab_style(
+    style = cell_text(style = "italic"),
+    locations = cells_body(
+      columns = latinName)
+    ) |>
+  tab_source_note(
+    source_note = "Table 1. Abundance of reads of two mitochondrial regions on Upper Fountain Creek (site ID UFC) 9/26/2023. Sequences ran against local database."
+  ) |> 
+  cols_width(
+    UFC_X ~ px(100),
+    sum_SR_X ~ px(100),
+    commonName ~ px(200),
+    latinName ~ px(200))|> 
+cols_align(
+  align = "center",
+  columns = c(UFC_X, sum_SR_X))
+
+UFC3_gt
+
+UFC3_gt |> gtsave("UFC3_gt.png", expand = 30)
+
+###could write code where where each site is generic in the coding and then you can input a site/specific data to fill for the generic input 
+```
+
+
+
+
+
+
